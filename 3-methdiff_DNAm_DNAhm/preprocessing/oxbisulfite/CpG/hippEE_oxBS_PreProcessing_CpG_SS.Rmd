@@ -1,0 +1,496 @@
+DecipherPD Mouse Enriched Environment Hippocampus Data Pre-Processing
+================================
+
+##### Analyst: Samantha Schaffner
+##### Date: Nov 21, 2022
+
+This project investigates the effects of genotype and lifestyle factors on the DNA methylome of C57BL/6 mice. Specifically, wild type and human SNCA transgenic mice (with a BAC insertion containing full-length human SNCA and all its regulatory elements) were reared to the age of either 6 or 12 months before sacrificing. A subset of 6 month old mice from both genotypes were exposed to a chronic stress paradigm, while a subset of 12 month old mice from both genotypes were exposed to an enriched environment paradigm. From all groups, hippocampus and striatum tissues were collected.
+
+DNA was extracted from mouse brain tissues and prepped for reduced representation bisulfite sequenicng (RRBS) using either a bisulfite conversion (mC + hmC) or oxidatitve bisulfite conversion (mC only) protocol. Samples were pooled in groups of 8 and sequenced on an Illumina HiSeq2500 (75bp, paired-end) at the BC Genome Sciences Centre. Alignment and methylation ratio calculations were performed using the BSMAP pipeline.
+
+In the script "hippEE_oxBS_BSraw_0870.R", oxBS data was read in and filtered for > 10X and < 99.9% quantile of read coverage. The resulting data was stored as a beta matrix ("all_EE_mC_betas.RData") and BSraw object ("hippEE_oxBS_BSraw_SS.RData").
+
+Here, I'll perform outlier checks and variability filtering on the data prior to regression analysis.
+
+## Working directory and libraries
+```{r libraries, eval=F}
+.libPaths(c(.libPaths(), "/mnt/scratch/KoborLab/R_Libs/4.2", "/mnt/scratch/KoborLab/Personal_Folders/sschaffner/Rstudio/R/x86_64-pc-linux-gnu-library/4.0/"))
+library(lifecycle, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(scales, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(vctrs, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(ggplot2, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+
+library(dplyr)
+library(BiSeq)
+library(GenomicRanges)
+library(gplots)
+library(RColorBrewer)
+library(lumi)
+library(reshape2)
+library(ggrepel)
+library(wateRmelon)
+library(gridExtra)
+```
+
+## Loading in and formatting data
+```{r load data, eval=F}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/hippEE_oxBS_BSraw_CpG_unfiltered.RData")
+meta <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/mapq_filtered_qc_stats.csv")
+
+#matching meta data to colnames of BSraw object
+meta <- meta[meta$Conversion=="oxBS" & meta$Age_months==12,]
+meta <- meta[-which(meta$Pool=="PX1175"),]
+#fill in "SampleID" column: numbered 1-4 by adapter (alphabetical)
+meta$SampleID <- paste(meta$Genotype, meta$Environment, sep="")
+meta$SampleID <- gsub("STD", "SE", meta$SampleID)
+meta <- meta %>% arrange(Adapter) %>% arrange(desc(Environment)) %>% arrange(desc(Genotype))
+meta$SampleID <- paste(meta$SampleID, rep(seq(1:4),4), sep="")
+meta$SampleID
+all(meta$SampleID==colnames(oxBS_BSraw_CpG)) #TRUE
+
+#replace colData slot in BSraw object and save
+colData(oxBS_BSraw_CpG) <- DataFrame(meta)
+colnames(oxBS_BSraw_CpG) <- meta$SampleID
+save(oxBS_BSraw_CpG, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/hippEE_oxBS_BSraw_CpG_unfiltered.RData")
+```
+
+## Quality control
+Examing read coverage statistics.
+```{r covStatistics, echo=F, eval=F}
+#Look at overall read coverage
+covStatistics(oxBS_BSraw_CpG) #all samples have 13,009,940 covered CpGs
+#$Median_coverage
+#WTSE1 WTSE2 WTSE3 WTSE4 WTEE1 WTEE2 WTEE3 WTEE4 TGSE1 TGSE2 TGSE3 TGSE4 TGEE1 TGEE2 TGEE3 TGEE4 
+#   50    27    37    18    28    20    35    11    50    29    39    14    16    20    42    15 
+
+covBoxplots(oxBS_BSraw)
+cov <- covStatistics(oxBS_BSraw_CpG)$Median_coverage
+all(names(cov)==meta$SampleID) #TRUE
+meta$cov<- cov
+
+colnames(meta)
+
+cov_melt <- melt(meta[,c(4,13)], id.vars="SampleID")
+ggplot(cov_melt, aes(x=SampleID, y=value)) + geom_col(position="dodge") + theme_bw() + ylab("Median coverage") + theme(axis.title.x=element_blank(), axis.text.x=element_text(angle=90)) + labs(fill="Threshold") + geom_hline(yintercept=20)
+```
+![Median read coverage before filtering](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/median_cov_unfiltered.png)
+Samples with median cov < 20X: TGEE1, TGEE4, TGSE4, WTEE4, WTSE4
+
+## ANOVA
+```{r ANOVA, eval=F}
+#ANOVA to test association between mean meth level and read coverage
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/all_EE_mC_betas_CpG_unfiltered.RData")
+mean_methlevel <- colMeans(all_EE)
+all.equal(names(mean_methlevel), names(cov)) #TRUE
+summary(aov(mean_methlevel ~ cov))
+#            Df    Sum Sq   Mean Sq F value Pr(>F)
+#cov          1 8.420e-06 8.424e-06   1.791  0.202
+#Residuals   14 6.583e-05 4.702e-06    
+```
+
+Median coverage is not related to mean DNAm level per sample.
+
+# PCA on beta values
+
+Goal: to see whether a PCA on all DNAm sites separates the groups. This will give a bird's eye view of whether DNAm is responsible for biochemical differences between genotype and/or environment.
+
+```{r pca, eval=F}
+pca_raw <- princomp(all_EE)
+loadings_raw <- as.data.frame(unclass(pca_raw$loadings))
+loadings_raw$sample <- rownames(loadings_raw)
+loadings_raw$Genotype <- substr(loadings_raw$sample, start=1, stop=2)
+loadings_raw$Environment <- substr(loadings_raw$sample, start=3, stop=4)
+loadings_raw$Group <- substr(loadings_raw$sample, start=1, stop=4)
+vars <- pca_raw$sdev^2
+Importance<-vars/sum(vars)
+adjust<-1-Importance[1]
+pca_adjusted<-Importance[2:length(Importance)]/adjust
+pca_df<-data.frame(adjusted_variance=pca_adjusted, PC=seq(1:length(pca_adjusted)))
+head(pca_df)
+#       adjusted_variance PC
+#Comp.2        0.10402539  1
+#Comp.3        0.10118786  2
+#Comp.4        0.09496032  3
+#Comp.5        0.08115669  4
+#Comp.6        0.07673117  5
+#Comp.7        0.07290550  6
+colnames(loadings_raw)[2:16] <- paste("PC", seq(1:15), sep="")
+
+ggplot(loadings_raw, aes(x=PC1, y=PC2, col=Group)) + geom_point(size=3) + theme_classic() + scale_colour_manual(values=c("palegreen2", "plum2", "grey60", "black")) + xlab("PC1 (10.3%)") + ylab("PC2 (10.1%)") + ggtitle("Unfiltered oxBS data")  + theme(legend.position="none") +geom_label_repel(data = loadings_raw[loadings_raw$PC1<(-0.3)|abs(loadings_raw$PC2)>(0.3),], aes(label = sample), size = 4) 
+
+ggplot(loadings_raw, aes(x=PC3, y=PC4, col=Group)) + geom_point(size=3) + theme_classic() + scale_colour_manual(values=c("palegreen2", "plum2", "grey60", "black")) + xlab("PC3 (9.5%)") + ylab("PC4 (8.0%)") + ggtitle("Unfiltered oxBS data")  + theme(legend.position="none") +geom_label_repel(data = loadings_raw[loadings_raw$PC3<(-0.3)|loadings_raw$PC4<(-0.5),], aes(label = sample), size = 4)
+
+ggplot(loadings_raw, aes(x=PC5, y=PC6, col=Group)) + geom_point(size=3) + theme_classic() + scale_colour_manual(values=c("palegreen2", "plum2", "grey60", "black")) + xlab("PC5 (7.7%)") + ylab("PC6 (7.4%)") + ggtitle("Unfiltered oxBS data")  + theme(legend.position="none") +geom_label_repel(data = loadings_raw[loadings_raw$PC5<(-0.3)|abs(loadings_raw$PC6)>(0.4),], aes(label = sample), size = 4)
+```
+![PCA on all betas: PC1 vs PC2](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/pc1_pc2_oxbs_unfiltered.png)
+
+WTEE4, TGSE4, and TGEE1 are outliers.
+
+![PCA on all betas: PC3 vs PC4](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/pc3_pc4_oxbs_unfiltered.png)
+
+The three samples identified in the PC1/2 plot all cluster further away along PC3. It'll be interesting to see if PC3 correlates with any known variables that might be affecting DNAm variation in these samples.
+
+## Plot sample-sample correlation of beta values
+```{r sample-sample cor, eval=F}
+YlOrRd <- brewer.pal("YlOrRd", n=9)
+
+betas_cor_raw <- cor(all_EE)
+heatmap.2(betas_cor_raw, trace="none", col=YlOrRd, Colv=NA, Rowv=NA, cellnote=round(betas_cor_raw, 2), notecol="black")
+```
+![Sample-sample correlations](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/sample_cor_oxBS_CpG_unfiltered.png)
+
+Sample-sample cor is high for all samples. Lowest is 0.88-0.89 for WTEE4, TGSE4, and TGEE1 (outliers from PCA).
+
+# Outlier detection
+Using wateRmelon and lumi on beta values.
+```{r outliers, eval=F}
+#### outlyx method
+outlyx <- outlyx(all_EE)
+colnames(all_EE)[outlyx$mv] #"WTSE1" "WTSE3" "TGSE1" "TGEE3"
+colnames(all_EE)[outlyx$iqr] #none
+colnames(all_EE)[outlyx$outliers] #none
+
+#### detectOutlier method
+detout <- detectOutlier(as.matrix(all_EE)) #default threshold of 2
+which(detout) #none
+table(detout)
+#detout
+#FALSE 
+#   16
+```
+
+# Beta distributions
+```{r beta dist, eval=F}
+Beta_raw_sample<-all_EE[sample(1:nrow(all_EE), 100000),]
+Beta_raw_sample_melted<- melt(Beta_raw_sample)
+Beta_raw_Plot<-Beta_raw_sample_melted[which(Beta_raw_sample_melted$value >= 0),]
+Beta_raw_Plot<-merge(Beta_raw_Plot,meta, by.x="variable", by.y="SampleID")
+Beta_raw_Plot$group <- substr(Beta_raw_Plot$variable, start=1, stop=4)
+
+#coloring by group
+ggplot(Beta_raw_Plot, aes(value, group=variable, color=group))+
+  geom_density(size=1)+theme_bw() + ggtitle("All samples")
+
+#individual plots for each group, samples labelled
+ggplot(Beta_raw_Plot[Beta_raw_Plot$group=="WTSE",], aes(value, group=variable, color=variable))+geom_density(size=1)+theme_bw()
+```
+![Beta distributions](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/beta_dist_oxBS_unfiltered_CpG.png)
+
+![Beta distributions: WTSE](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/beta_dist_WTSE.png)
+![Beta distributions: WTEE](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/beta_dist_WTEE.png)
+
+![Beta distributions: TGSE](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/beta_dist_TGSE.png)
+
+![Beta distributions: TGEE](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/beta_dist_TGEE.png)
+
+Odd beta distributions: WTSE4, WTEE4, TGSE4, TGEE3, TGEE4
+
+# Principal component analysis
+
+```{r PCA all, eval = F}
+source("/mnt/scratch/KoborLab/shared_coding_resource/PCA_Plot_Function.R")
+##Code by Nicole Gladish and Rachel Edgar - PCA plot function with FDR/continous options
+
+#Restructure meta
+str(meta)
+rownames(meta) <- meta$SampleID
+meta$Genotype <- as.factor(meta$Genotype)
+meta$Environment <- as.factor(meta$Environment)
+meta$Pool <- as.factor(meta$Pool)
+meta$Group <- paste(meta$Genotype, meta$Environment, sep="")
+meta$Group <- as.factor(gsub("STD","SE",meta$Group))
+#colnames(meta)[13] <- "Med_cov_fold"
+meta_categorical <- meta[,c("Genotype","Environment","Group","Pool")]
+meta_continuous <- meta[,c("Total_mappings","Percent_aligned","Total_cytosines","Avg_cov_fold")]
+
+#raw data PCA
+all(meta$SampleID==colnames(all_EE)) #TRUE
+PCA_full<-princomp(all_EE[complete.cases(all_EE),])
+ord <- c(seq(1:(ncol(meta_categorical)+ncol(meta_continuous))))
+PCA_Plot(PCA_full, type="Sparse", MTC = T, Discrete = F) 
+```
+![Scree plot: raw data PCA](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/pca_unfiltered_scree.png)
+
+![Heat map: raw data PCA](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/pca_unfiltered_heat_legend.png)
+No known biological or technical variables associate significantly with overall DNAm variation by PCA.
+
+# Quality control on coverage-filtered dataset
+
+Examing read coverage statistics.
+```{r covStatistics var, echo=F, eval=F}
+rm(all_EE, oxBS_BSraw_CpG)
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/all_EE_mC_betas_CpG_10X.RData")
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/hippEE_oxBS_BSraw_CpG_10X.RData")
+
+#Look at overall read coverage
+covStatistics(oxBS_BSraw_CpG) #all samples have 914,215 covered CpGs
+#$Median_coverage
+#WTSE1 WTSE2 WTSE3 WTSE4 WTEE1 WTEE2 WTEE3 WTEE4 TGSE1 TGSE2 TGSE3 TGSE4 TGEE1 
+#   94    51    70    35    54    38    68    22    89    53    71    27    31 
+#TGEE2 TGEE3 TGEE4 
+#   37    77    29 
+
+covBoxplots(oxBS_BSraw_CpG)
+cov <- covStatistics(oxBS_BSraw_CpG)$Median_coverage
+all(names(cov)==meta$SampleID) #TRUE
+meta$cov<- cov
+
+colnames(meta)
+meta <- as.data.frame(meta)
+
+cov_melt <- melt(meta[,c(4,14)], id.vars="SampleID")
+ggplot(cov_melt, aes(x=SampleID, y=value)) + geom_col(position="dodge") + theme_bw() + ylab("Median coverage") + theme(axis.title.x=element_blank(), axis.text.x=element_text(angle=90)) + labs(fill="Threshold") + geom_hline(yintercept=20)
+```
+![Median read coverage after filtering](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/median_cov_10X.png)
+All samples have median read coverage > 20X. WTEE4 is the lowest, with a median coverage of 22X.
+
+## ANOVA
+```{r ANOVA var, eval=F}
+#ANOVA to test association between mean meth level and read coverage
+mean_methlevel <- colMeans(all_EE)
+all.equal(names(mean_methlevel), names(cov)) #TRUE
+summary(aov(mean_methlevel ~ cov))
+#            Df    Sum Sq   Mean Sq F value Pr(>F)
+#cov          1 5.980e-06 5.977e-06   1.716  0.211
+#Residuals   14 4.876e-05 3.483e-06   
+```
+
+Median coverage is not related to mean DNAm level per sample.
+
+# PCA on beta values
+
+Goal: to see whether a PCA on all DNAm sites separates the groups. This will give a bird's eye view of whether DNAm is responsible for biochemical differences between genotype and/or environment.
+
+```{r pca var, eval=F}
+pca_raw <- princomp(as.matrix(all_EE))
+loadings_raw <- as.data.frame(unclass(pca_raw$loadings))
+loadings_raw$sample <- rownames(loadings_raw)
+loadings_raw$Genotype <- substr(loadings_raw$sample, start=1, stop=2)
+loadings_raw$Environment <- substr(loadings_raw$sample, start=3, stop=4)
+loadings_raw$Group <- substr(loadings_raw$sample, start=1, stop=4)
+vars <- pca_raw$sdev^2
+Importance<-vars/sum(vars)
+adjust<-1-Importance[1]
+pca_adjusted<-Importance[2:length(Importance)]/adjust
+pca_df<-data.frame(adjusted_variance=pca_adjusted, PC=seq(1:length(pca_adjusted)))
+head(pca_df)
+#       adjusted_variance PC
+#Comp.2        0.10532016  1
+#Comp.3        0.09639446  2
+#Comp.4        0.08878112  3
+#Comp.5        0.07798011  4
+#Comp.6        0.07645869  5
+#Comp.7        0.07102969  6
+colnames(loadings_raw)[2:16] <- paste("PC", seq(1:15), sep="")
+
+ggplot(loadings_raw, aes(x=PC1, y=PC2, col=Group)) + geom_point(size=3) + theme_classic() + scale_colour_manual(values=c("palegreen2", "plum2", "grey60", "black")) + xlab("PC1 (10.5%)") + ylab("PC2 (9.6%)") + ggtitle("Coverage-filtered oxBS data")  + theme(legend.position="none") +geom_label_repel(data = loadings_raw[loadings_raw$PC1<(-0.3)|abs(loadings_raw$PC2)>(0.2),], aes(label = sample), size = 4) 
+
+ggplot(loadings_raw, aes(x=PC3, y=PC4, col=Group)) + geom_point(size=3) + theme_classic() + scale_colour_manual(values=c("palegreen2", "plum2", "grey60", "black")) + xlab("PC3 (8.9%)") + ylab("PC4 (7.8%)") + ggtitle("Coverage-filtered oxBS data")  + theme(legend.position="none") +geom_label_repel(data = loadings_raw[loadings_raw$PC3<(-0.5)|loadings_raw$PC4<(-0.5),], aes(label = sample), size = 4)
+
+ggplot(loadings_raw, aes(x=PC5, y=PC6, col=Group)) + geom_point(size=3) + theme_classic() + scale_colour_manual(values=c("palegreen2", "plum2", "grey60", "black")) + xlab("PC5 (7.6%)") + ylab("PC6 (7.1%)") + ggtitle("Coverage-filtered oxBS data")  + theme(legend.position="none") +geom_label_repel(data = loadings_raw[loadings_raw$PC5<(-0.3)|abs(loadings_raw$PC6)>(0.4),], aes(label = sample), size = 4)
+```
+![PCA on all betas](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/pc1_pc2_oxbs_10X.png)
+
+TGSE4 and TGEE1 are still clear outliers. WTEE4 sticks out but is closer to the cluster than before.
+
+## Plot sample-sample correlation of beta values
+```{r sample-sample cor var, eval=F}
+YlOrRd <- brewer.pal("YlOrRd", n=9)
+
+betas_cor_raw <- cor(all_EE)
+heatmap.2(betas_cor_raw, trace="none", col=YlOrRd, Colv=NA, Rowv=NA, cellnote=round(betas_cor_raw, 2), notecol="black")
+```
+![Sample-sample correlations](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/sample_cor_oxbs_10X.png)
+
+Sample-sample correlation is > 0.9 for all samples. 
+
+# Outlier detection
+Using wateRmelon and lumi on beta values.
+```{r outliers var, eval=F}
+#### outlyx method
+outlyx <- outlyx(all_EE)
+colnames(betas)[outlyx$mv] #none
+colnames(betas)[outlyx$iqr] #none
+
+#### detectOutlier method
+detout <- detectOutlier(as.matrix(all_EE)) #default threshold of 2
+which(detout) #none
+table(detout)
+#detout
+#FALSE 
+#   16
+```
+
+# Beta distributions
+```{r beta dist var, eval=F}
+Beta_raw_sample<-all_EE[sample(1:nrow(all_EE), 100000),]
+Beta_raw_sample_melted<- melt(Beta_raw_sample)
+Beta_raw_Plot<-Beta_raw_sample_melted[which(Beta_raw_sample_melted$value >= 0),]
+Beta_raw_Plot<-merge(Beta_raw_Plot,meta, by.x="variable", by.y="SampleID")
+Beta_raw_Plot$group <- substr(Beta_raw_Plot$variable, start=1, stop=4)
+
+#coloring by group
+p1 <- ggplot(Beta_raw_Plot[Beta_raw_Plot$group=="WTSE",], aes(value, group=variable, color=variable))+
+  geom_density(size=1)+theme_bw() + ggtitle("WTSE")
+
+p2 <- ggplot(Beta_raw_Plot[Beta_raw_Plot$group=="WTEE",], aes(value, group=variable, color=variable))+
+  geom_density(size=1)+theme_bw() + ggtitle("WTEE")
+
+p3 <- ggplot(Beta_raw_Plot[Beta_raw_Plot$group=="TGSE",], aes(value, group=variable, color=variable))+
+  geom_density(size=1)+theme_bw() + ggtitle("TGSE")
+
+p4 <- ggplot(Beta_raw_Plot[Beta_raw_Plot$group=="TGEE",], aes(value, group=variable, color=variable))+
+  geom_density(size=1)+theme_bw() + ggtitle("TGEE")
+
+png("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/beta_dist_oxBS_10X.png", width=1400, height=700)
+grid.arrange(p1,p2,p3,p4,nrow=2)
+dev.off()
+```
+![Beta distributions](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/beta_dist_oxBS_10X.png)
+
+Beta distributions are much improved after coverage filtering. WTEE4, TGSE4, and TGEE1 still look slightly different than the other samples.
+
+# Principal component analysis
+
+```{r PCA var, eval = F}
+source("/mnt/scratch/KoborLab/shared_coding_resource/PCA_Plot_Function.R")
+##Code by Nicole Gladish and Rachel Edgar - PCA plot function with FDR/continous options
+
+#Restructure meta
+str(meta)
+rownames(meta) <- meta$SampleID
+meta$Genotype <- as.factor(meta$Genotype)
+meta$Environment <- as.factor(meta$Environment)
+meta$Pool <- as.factor(meta$Pool)
+meta$Group <- paste(meta$Genotype, meta$Environment, sep="")
+meta$Group <- as.factor(gsub("STD","SE",meta$Group))
+colnames(meta)[14] <- "Med_cov_fold"
+meta_categorical <- meta[,c("Genotype","Environment","Group","Pool")]
+meta_continuous <- meta[,c("Total_mappings","Percent_aligned","Total_cytosines","Avg_cov_fold","Med_cov_fold")]
+
+#raw data PCA
+all(meta$SampleID==colnames(all_EE)) #TRUE
+PCA_full<-princomp(all_EE[complete.cases(all_EE),])
+ord <- c(seq(1:(ncol(meta_categorical)+ncol(meta_continuous))))
+PCA_Plot(PCA_full, type="Sparse", MTC = T, Discrete = F) 
+```
+![Scree plot: filtered data PCA](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/pca_10X_scree.png)
+
+![Heat map: filtered data PCA](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/pca_10X_heat_legend.png)
+
+There are no associations.
+
+# Meta data correlation
+```{r meta data cor, eval=F}
+source("/mnt/scratch/KoborLab/TERRE/sschaffner/2022/correlation_pval.R")
+
+#Create correlation matrix
+colnames(meta)
+meta_cor <- meta[,c(2:3,6,9:14)]
+cormat <- correlation_pval(meta_cor)
+
+# Get lower triangle of the correlation matrix
+get_lower_tri<-function(cormat){
+    cormat[upper.tri(cormat)] <- NA
+    return(cormat)
+  }
+# Get upper triangle of the correlation matrix
+get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+  }
+
+upper_tri <- get_upper_tri(cormat)
+
+#colour if sig
+for(x in 1:nrow(upper_tri)){
+  for(y in 1:ncol(upper_tri)){
+    if(is.na(upper_tri[x,y])==FALSE){
+    if(as.numeric(upper_tri[x,y])<=0.001){upper_tri[x,y]<-"<=0.001"}else{
+    if(as.numeric(upper_tri[x,y])<=0.01){upper_tri[x,y]<-"<=0.01"}else{
+      if(as.numeric(upper_tri[x,y])<=0.05){upper_tri[x,y]<-"<=0.05"}else{upper_tri[x,y]<-">0.05"}}}}
+  }}
+upper_tri[upper_tri=="NaN"] <- NA
+melted_cormat <- reshape2::melt(upper_tri, na.rm = TRUE)
+ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+scale_fill_manual(values=c("#084594","#4292c6","#9ecae1","#deebf7"), name="p-value") +
+  theme_minimal()+ 
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 12, hjust = 1))+
+ coord_fixed()
+```
+![Meta data correlation](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/meta_cor_mat.png)
+
+Mapping and coverage statistics relate closely as expected. Pool is correlated to group and genotype, since samples of the same genotype were pooled together during library prep. Environment correlates mildly with percent aligned (p < 0.05).
+
+## Removing outliers
+
+TGSE4, TGEE1, and WTEE4 should be removed as these samples fail multiple checks even when data is filtered for coverage.
+
+```{r outlier removal, eval=F}
+dim(oxBS_BSraw_CpG_noout <- oxBS_BSraw_CpG[,-(which(colnames(oxBS_BSraw_CpG)%in%c("TGSE4","TGEE1","WTEE4")))]) #914215     13
+save(oxBS_BSraw_CpG_noout, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/hippEE_oxBS_BSraw_CpG_10X_noout.RData")
+```
+
+# PCA on beta values
+
+Goal: to see whether a PCA on all DNAm sites separates the groups. This will give a bird's eye view of whether DNAm is responsible for biochemical differences between genotype and/or environment.
+
+```{r pca beta, eval=F}
+Bvals <- as.data.frame(methLevel(rawToRel(oxBS_BSraw_CpG_noout)))
+
+pca <- princomp(Bvals)
+loadings <- as.data.frame(unclass(pca$loadings))
+loadings$sample <- rownames(loadings)
+loadings$Group <- substr(loadings$sample, start=1, stop=4)
+
+vars <- pca$sdev^2
+Importance<-vars/sum(vars)
+adjust<-1-Importance[1]
+pca_adjusted<-Importance[2:length(Importance)]/adjust
+pca_df<-data.frame(adjusted_variance=pca_adjusted, PC=seq(1:length(pca_adjusted)))
+head(pca_df)
+#       adjusted_variance PC
+#Comp.2        0.10987524  1
+#Comp.3        0.10771665  2
+#Comp.4        0.09994705  3
+#Comp.5        0.09395734  4
+#Comp.6        0.08864738  5
+#Comp.7        0.08347867  6
+
+colnames(loadings)[2:13] <- paste("PC", seq(1:12), sep="")
+
+ggplot(loadings, aes(x=PC1, y=PC2, col=Group)) + geom_point(size=3) + theme_classic() + scale_colour_manual(values=c("palegreen2", "plum2", "grey60", "black")) + xlab("PC1 (11.0%)") + ylab("PC2 (10.8%)") + ggtitle("DNA methylation")
+```
+![PCA on all filtered DNAm betas](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/PCA_DNAm_CpG.png)
+
+# PCA on beta values: variable sites
+
+```{r pca beta var, eval=F}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/oxBS_BSraw_CpG_10X_noout_auto_var.RData")
+Bvals <- as.data.frame(methLevel(rawToRel(BSraw_auto_var)))
+
+pca <- princomp(Bvals)
+loadings <- as.data.frame(unclass(pca$loadings))
+loadings$sample <- rownames(loadings)
+loadings$Group <- substr(loadings$sample, start=1, stop=4)
+
+vars <- pca$sdev^2
+Importance<-vars/sum(vars)
+adjust<-1-Importance[1]
+pca_adjusted<-Importance[2:length(Importance)]/adjust
+pca_df<-data.frame(adjusted_variance=pca_adjusted, PC=seq(1:length(pca_adjusted)))
+head(pca_df)
+#       adjusted_variance PC
+#Comp.2        0.11109529  1
+#Comp.3        0.10840269  2
+#Comp.4        0.09951950  3
+#Comp.5        0.09346448  4
+#Comp.6        0.08850228  5
+#Comp.7        0.08307982  6
+
+colnames(loadings)[2:13] <- paste("PC", seq(1:12), sep="")
+
+ggplot(loadings, aes(x=PC1, y=PC2, col=Group)) + geom_point(size=3) + theme_classic() + scale_colour_manual(values=c("palegreen2", "plum2", "grey60", "black")) + xlab("PC1 (11.0%)") + ylab("PC2 (10.8%)") + ggtitle("DNA methylation")
+```
