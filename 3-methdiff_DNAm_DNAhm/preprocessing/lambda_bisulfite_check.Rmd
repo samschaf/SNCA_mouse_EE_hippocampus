@@ -1,0 +1,119 @@
+In this script I will look at the average DNA methylation across lambda phage spike-in DNA to determine bisulfite conversion efficiency. Phage DNA should all be unmethylated, and high quality samples should show an average methylation of 2% or less.
+
+Checking outliers first: WT_12m_EE_4, TG_12m_EE_2, TG_12m_std_1
+
+WT 12m std
+```{r}
+WT_12m_std_1 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0869_oxBS_pool1/ACAGTG_methratio_lambda_only.txt")
+mean(WT_12m_std_1$ratio) #0.006708479
+
+WT_12m_std_2 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0869_oxBS_pool1/ACTTGA_methratio_lambda_only.txt")
+mean(WT_12m_std_2$ratio) #0.007476594
+
+WT_12m_std_3 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0869_oxBS_pool1/ATCACG_methratio_lambda_only.txt")
+mean(WT_12m_std_3$ratio) #0.01060752
+
+WT_12m_std_4 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0869_oxBS_pool1/CAGATC_methratio_lambda_only.txt")
+mean(WT_12m_std_4$ratio) #0.009279661
+```
+WT 12m EE
+```{r}
+WT_12m_EE_1 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0869_oxBS_pool1/CGATGT_methratio_lambda_only.txt")
+mean(WT_12m_EE_1$ratio) #0.007564729
+
+WT_12m_EE_2 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0869_oxBS_pool1/GCCAAT_methratio_lambda_only.txt")
+mean(WT_12m_EE_2$ratio) #0.008773356
+
+WT_12m_EE_3 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0869_oxBS_pool1/TGACCA_methratio_lambda_only.txt")
+mean(WT_12m_EE_3$ratio) #0.0079125
+
+WT_12m_EE_4 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0869_oxBS_pool1/TTAGGC_methratio_lambda_only.txt")
+mean(WT_12m_EE_4$ratio) #0.008823061
+```
+TG 12m std
+```{r}
+TG_12m_std_1 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0870_oxBS_pool2/ACAGTG_methratio_lambda_only.txt")
+mean(TG_12m_std_1$ratio) #0.007886425
+
+TG_12m_std_2 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0870_oxBS_pool2/ACTTGA_methratio_lambda_only.txt")
+mean(TG_12m_std_2$ratio) #0.008868263
+
+TG_12m_std_3 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0870_oxBS_pool2/ATCACG_methratio_lambda_only.txt")
+mean(TG_12m_std_3$ratio) #0.008858986
+
+TG_12m_std_4 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0870_oxBS_pool2/CAGATC_methratio_lambda_only.txt")
+mean(TG_12m_std_4$ratio) #0.008204137
+```
+TG 12m EE
+```{r}
+TG_12m_EE_1 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0870_oxBS_pool2/CGATGT_methratio_lambda_only.txt")
+mean(TG_12m_EE_1$ratio) #0.006677606
+
+TG_12m_EE_2 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0870_oxBS_pool2/GCCAAT_methratio_lambda_only.txt")
+mean(TG_12m_EE_2$ratio) #0.00653367
+
+TG_12m_EE_3 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0870_oxBS_pool2/TGACCA_methratio_lambda_only.txt")
+mean(TG_12m_EE_3$ratio) #0.007410984
+
+TG_12m_EE_4 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0870_oxBS_pool2/TTAGGC_methratio_lambda_only.txt")
+mean(TG_12m_EE_4$ratio) #0.006608163
+```
+WT 6m std
+```{r}
+WT_6m_std_1 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0871_oxBS_pool3/ACAGTG_methratio_lambda_only.txt")
+mean(WT_6m_std_1$ratio) #0.008069987
+
+WT_6m_std_2 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0871_oxBS_pool3/ACTTGA_methratio_lambda_only.txt")
+mean(WT_6m_std_2$ratio) #0.007918704
+
+WT_6m_std_3 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0871_oxBS_pool3/ATCACG_methratio_lambda_only.txt")
+mean(WT_6m_std_3$ratio) #0.007386679
+
+WT_6m_std_4 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0871_oxBS_pool3/CAGATC_methratio_lambda_only.txt")
+mean(WT_6m_std_4$ratio) #0.006733965
+```
+WT 6m stress
+```{r}
+WT_6m_stress_1 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0871_oxBS_pool3/CGATGT_methratio_lambda_only.txt")
+mean(WT_6m_stress_1$ratio) #0.00543447
+
+WT_6m_stress_2 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0871_oxBS_pool3/GCCAAT_methratio_lambda_only.txt")
+mean(WT_6m_stress_2$ratio) #0.008499023
+
+WT_6m_stress_3 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0871_oxBS_pool3/TGACCA_methratio_lambda_only.txt")
+mean(WT_6m_stress_3$ratio) #0.005296136
+
+WT_6m_stress_4 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0871_oxBS_pool3/TTAGGC_methratio_lambda_only.txt")
+mean(WT_6m_stress_4$ratio) #0.01070083
+```
+
+TG 6m std
+```{r}
+TG_6m_std_1 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0872_oxBS_pool4/ACAGTG_methratio_lambda_only.txt")
+mean(TG_6m_std_1$ratio) #0.007937158
+
+TG_6m_std_2 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0872_oxBS_pool4/ACTTGA_methratio_lambda_only.txt")
+mean(TG_6m_std_2$ratio) #0.007868603
+
+TG_6m_std_3 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0872_oxBS_pool4/ATCACG_methratio_lambda_only.txt")
+mean(TG_6m_std_3$ratio) #0.01049263
+
+TG_6m_std_4 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0872_oxBS_pool4/CAGATC_methratio_lambda_only.txt")
+mean(TG_6m_std_4$ratio) #0.009302289
+```
+TG 6m stress
+```{r}
+TG_6m_stress_1 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0872_oxBS_pool4/CGATGT_methratio_lambda_only.txt")
+mean(TG_6m_stress_1$ratio) #0.00806334
+
+TG_6m_stress_2 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0872_oxBS_pool4/GCCAAT_methratio_lambda_only.txt")
+mean(TG_6m_stress_2$ratio) #0.008365525
+
+TG_6m_stress_3 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0872_oxBS_pool4/TGACCA_methratio_lambda_only.txt")
+mean(TG_6m_stress_3$ratio) #0.007946369
+
+TG_6m_stress_4 <- read.delim("~/KoborLab/Sam_New_Test_Data/RRBS/methratio/PX0872_oxBS_pool4/TTAGGC_methratio_lambda_only.txt")
+mean(TG_6m_stress_4$ratio) #0.008561485
+```
+
+All the oxBS samples had successful bisulfite conversion (average DNAm in lambda spike-in was no greater than 1%).
