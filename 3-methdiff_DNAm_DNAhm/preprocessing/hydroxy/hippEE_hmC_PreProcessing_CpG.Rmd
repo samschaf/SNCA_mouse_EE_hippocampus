@@ -1,0 +1,266 @@
+DecipherPD Mouse Enriched Environment Hippocampus Data Pre-Processing
+================================
+
+##### Analyst: Samantha Schaffner
+##### Date: Dec 7, 2022
+
+This project investigates the effects of genotype and lifestyle factors on the DNA methylome of C57BL/6 mice. Specifically, wild type and human SNCA transgenic mice (with a BAC insertion containing full-length human SNCA and all its regulatory elements) were reared to the age of either 6 or 12 months before sacrificing. A subset of 6 month old mice from both genotypes were exposed to a chronic stress paradigm, while a subset of 12 month old mice from both genotypes were exposed to an enriched environment paradigm. From all groups, hippocampus and striatum tissues were collected.
+
+DNA was extracted from mouse brain tissues and prepped for reduced representation bisulfite sequencing (RRBS) using either a bisulfite conversion (mC + hmC) or oxidatitve bisulfite conversion (mC only) protocol. Samples were pooled in groups of 8 and sequenced on an Illumina HiSeq2500 (75bp, paired-end) at the BC Genome Sciences Centre. Alignment and methylation ratio calculations were performed using the BSMAP pipeline.
+
+In this script, the QC'ed oxBS and BS data (filtered for read coverage and outliers) will be combined to estimate 5hmC levels.
+
+## Working directory and libraries
+```{r libraries, eval=F}
+.libPaths(c(.libPaths(), "/mnt/scratch/KoborLab/R_Libs/4.2", "/mnt/scratch/KoborLab/Personal_Folders/sschaffner/Rstudio/R/x86_64-pc-linux-gnu-library/4.0/"))
+library(BiSeq)
+library(GenomicRanges)
+library(gplots)
+library(RColorBrewer)
+library(lumi)
+library(reshape2)
+```
+
+## Loading oxBS/BS data
+
+```{r load data, eval-F}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/hippEE_oxBS_BSraw_CpG_10X_noout.RData")
+oxBS_betas <- methLevel(rawToRel(oxBS_BSraw_CpG_noout))
+rownames(oxBS_betas) <- paste(seqnames(oxBS_BSraw_CpG_noout), ranges(oxBS_BSraw_CpG_noout), sep=".")
+
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/bisulfite/CpG/all_EE_BS_betas_CpG_10X_noout.RData")
+BS_betas <- all_EE_noout
+
+nrow(oxBS_betas <- oxBS_betas[rownames(oxBS_betas) %in% rownames(BS_betas),]) #737,703
+nrow(BS_betas <- BS_betas[match(rownames(oxBS_betas),rownames(BS_betas)),]) #737,703
+all(rownames(oxBS_betas)==rownames(BS_betas)) #TRUE
+all(colnames(oxBS_betas)==colnames(BS_betas)) #TRUE
+
+rm(all_EE_noout, oxBS_BSraw_CpG_noout)
+```
+
+## Calculate hydroxymethylation levels
+I will calculate the hmC betas by subtracting the oxBS values (mC) from the BS values (mC + hmC).
+```{r hydroxy calc, eval=F}
+#subtraction
+hydroxy <- BS_betas - oxBS_betas
+save(hydroxy, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/hmC_betas_CpG_10X_noout_raw.RData")
+
+#plot the distribution of hydroxy values
+hydroxy_values_plot<-melt(hydroxy)
+ggplot(hydroxy_values_plot, aes(value, group=variable))+geom_density(size=1, color="grey")+theme_bw()
+```
+![Density of all hydroxymethylation values](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/all_hydroxy_values.png)
+
+Most values are near zero, with spread on both sides. This indicates a fair number of values came out as negative after the subtraction. These negative values will be used as a detection threshold to eliminate technical noise.
+
+## Detectability threshold
+Next I will take the 95% quantile of negative hydroxymethylation values as a detectability threshold, and remove the sites whose values do not pass this threshold.
+```{r detectability, eval=F}
+# threshold for detectable (Rachel Edgar/Jonathan Mill method)
+neg_hydroxy_values<-hydroxy_values_plot[which(hydroxy_values_plot$value<0),]
+hydroxy_threshold<-abs(quantile(neg_hydroxy_values$value, 0.05))
+hydroxy_threshold #0.1786667
+
+mean_hydroxy_values<-rowMeans(hydroxy)
+hydroxy_values_detectable<-hydroxy[which(mean_hydroxy_values>=hydroxy_threshold),]
+nrow(hydroxy_values_detectable)/nrow(hydroxy) #2.6% passed detectability threshold (improvement from previous 1.1% on combined CpG/CpH)
+nrow(hydroxy_values_detectable) #19,459 CpG sites had detectable hydroxymethylation (previously 42,467 combined CpG/CpH)
+
+save(hydroxy_values_detectable, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/all_EE_hmC_betas_CpG_10X_noout.RData")
+
+#plot again
+hydroxy_values_plot<-melt(hydroxy_values_detectable)
+hydroxy_values_plot$group <- substr(hydroxy_values_plot$variable, start=1, stop=4)
+ggplot(hydroxy_values_plot, aes(value, group=variable, col=variable))+geom_density(size=1)+theme_bw() + facet_wrap(~group) + geom_vline(xintercept=0)
+
+ggplot(hydroxy_values_plot, aes(value, group=variable, color=group))+
+  geom_density(size=1)+theme_bw() + ggtitle("CpG hydroxymethylation (coverage-filtered)") + scale_color_manual(values=c("palegreen3","plum3","grey70","black"))
+
+ggplot(hydroxy_values_plot[hydroxy_values_plot$group%in%c("WTSE","TGSE"),], aes(value, group=group, fill=group, col=group))+
+geom_density(size=1, alpha=0.5)+theme_bw() + ggtitle("CpG hydroxymethylation (coverage-filtered)") + scale_fill_manual(values=c("plum3","grey48"))+ scale_color_manual(values=c("plum3","grey48")) + xlab("Beta value")
+
+ggplot(hydroxy_values_plot[hydroxy_values_plot$group%in%c("WTEE","TGEE"),], aes(value, group=group, fill=group, col=group))+
+geom_density(size=1, alpha=0.5)+theme_bw() + ggtitle("CpG hydroxymethylation (coverage-filtered)") + scale_fill_manual(values=c("palegreen3","grey70"))+ scale_color_manual(values=c("palegreen3","grey70")) + xlab("Beta value")
+```
+
+![Density of "detectable" hydroxymethylation values](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/beta_dist_10X.png)
+
+The vast majority of sites now show hydroxymethylation beta values >0. Note some samples have different beta distributions (peak height is shifted). 
+
+The mean of the distribution is different depending on genotype, with TG samples having lower hmC on average than WT samples.
+
+## Remove nonvariable sites
+```{r remove nonvar, eval=F}
+#Rachel's code for nonvariable 450k CpGs
+Variation<-function(x) {quantile(x, c(0.9), na.rm=T)[[1]]-quantile(x, c(0.1), na.rm=T)[[1]]}
+ref_range<-sapply(1:nrow(hydroxy_values_detectable), function(x) Variation(hydroxy_values_detectable[x,]))
+#Use a 10% threshold to match the 10X coverage filter
+nrow(hydroxy_variable <- hydroxy_values_detectable[which(ref_range>=0.1),]) #19,440 sites pass variability filter
+
+hydroxy_values_plot<-melt(hydroxy_values_detectable)
+hydroxy_values_plot$group <- substr(hydroxy_values_plot$variable, start=1, stop=4)
+ggplot(hydroxy_values_plot, aes(value, group=variable, color=group))+
+  geom_density(size=1)+theme_bw() + ggtitle("CpG hydroxymethylation (coverage- and variability-filtered)") + scale_color_manual(values=c("palegreen3","plum3","grey70","black"))
+
+save(hydroxy_variable, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/all_EE_hmC_betas_CpG_10X_var_noout.RData")
+```
+
+# Checking for global DNAm differences
+
+Differential DNAhm analysis showed losses of DNAhm in WTSE vs TGSE and WTEE vs TGEE mice. Here I'll test whether there is a global difference in DNAhm levels between these groups.
+
+## Checking normality of distribution
+```{r global DNAhm, eval=F}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/all_EE_hmC_betas_CpG_10X_var_noout.RData")
+colnames(hydroxy_variable)
+
+#calculate mean hydroxy levels across groups for each site
+hydroxy_variable$WTSE_mean <- rowMeans(hydroxy_variable[,1:4])
+hydroxy_variable$WTEE_mean <- rowMeans(hydroxy_variable[,5:7])
+hydroxy_variable$TGSE_mean <- rowMeans(hydroxy_variable[,8:10])
+hydroxy_variable$TGEE_mean <- rowMeans(hydroxy_variable[,11:13])
+
+#check whether data is normally distributed (parametric or non-paramteric test?)
+#get all values in one vector
+hydroxy_melt <- melt(hydroxy_variable[,1:13])
+qqnorm(hydroxy_melt$value)
+qqline(hydroxy_melt$value)
+
+#looks pretty normal, parametric should be OK
+```
+![Q-Q plot](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/qqplot.png)
+
+## T-test
+```{r ttest, eval=F}
+#WTSE vs TGSE
+t.test(hydroxy_variable$WTSE_mean, hydroxy_variable$TGSE_mean)$p.value #0
+summary(hydroxy_variable$TGSE_mean - hydroxy_variable$WTSE_mean) #5.3% mean diff
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#-0.64394 -0.13081 -0.03944 -0.05312  0.03639  0.41723 
+    
+#WTEE vs TGEE
+t.test(hydroxy_variable$WTEE_mean, hydroxy_variable$TGEE_mean)$p.value #0
+summary(hydroxy_variable$TGEE_mean - hydroxy_variable$WTEE_mean) #4.9% mean diff
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#-0.71241 -0.13818 -0.03971 -0.04860  0.04929  0.47898 
+    
+#WTSE vs WTEE
+t.test(hydroxy_variable$WTSE_mean, hydroxy_variable$WTEE_mean)$p.value #1.720825e-09
+summary(hydroxy_variable$WTEE_mean - hydroxy_variable$WTSE_mean) #0.57% mean diff
+#     Min.   1st Qu.    Median      Mean   3rd Qu.      Max. 
+#-0.464866 -0.063657  0.005133  0.005717  0.074064  0.416720 
+
+#TGSE vs TGEE
+t.test(hydroxy_variable$TGSE_mean, hydroxy_variable$TGEE_mean)$p.value #4.807222e-28
+summary(hydroxy_variable$TGEE_mean - hydroxy_variable$TGSE_mean) #1.0% mean diff
+#     Min.   1st Qu.    Median      Mean   3rd Qu.      Max. 
+#-0.476234 -0.063541  0.009434  0.010236  0.083327  0.561174 
+     
+#plotting
+hydroxy_melt$group <- NA
+hydroxy_melt[grep("WTSE", hydroxy_melt$variable),"group"] <- "WTSE"
+hydroxy_melt[grep("TGSE", hydroxy_melt$variable),"group"] <- "TGSE"
+hydroxy_melt[grep("WTEE", hydroxy_melt$variable),"group"] <- "WTEE"
+hydroxy_melt[grep("TGEE", hydroxy_melt$variable),"group"] <- "TGEE"
+
+hydroxy_melt$group <- as.factor(hydroxy_melt$group)
+library(DescTools)
+hydroxy_melt$group <- reorder.factor(hydroxy_melt$group, new.order=c("WTSE","TGSE","WTEE","TGEE"))
+
+ggplot(hydroxy_melt, aes(x=group, y=value, color=group)) + geom_boxplot() + theme_classic() + scale_color_manual(values=c("black","plum3","grey60","palegreen3")) + ylab("Beta value") + theme(axis.title.x=element_blank(), legend.position = "none")
+
+#ANOVA with Tukey HSD
+hydroxy_melt$group <- as.factor(hydroxy_melt$group)
+aov <- aov(value ~ group, data=hydroxy_melt)
+TukeyHSD(aov)
+#  Tukey multiple comparisons of means
+#    95% family-wise confidence level
+#
+#Fit: aov(formula = value ~ group, data = hydroxy_melt)
+#
+#$group
+#                  diff          lwr          upr p adj
+#TGSE-TGEE -0.006606581 -0.008126341 -0.005086822     0
+#WTEE-TGEE  0.039581094  0.038061335  0.041100853     0
+#WTSE-TGEE  0.031024975  0.029505216  0.032544735     0
+#WTEE-TGSE  0.046187675  0.044667916  0.047707434     0
+#WTSE-TGSE  0.037631556  0.036111797  0.039151316     0
+#WTSE-WTEE -0.008556119 -0.010075878 -0.007036359     0
+```
+![DNAhm levels across groups](/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/5-methdiff_DNAm_DNAhm/hydroxy/preprocessing/boxplots.png)
+
+# PCA on beta values: all sites (cov-filtered)
+
+```{r pca beta var, eval=F}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/all_EE_hmC_betas_CpG_10X_noout.RData")
+
+pca <- princomp(hydroxy_values_detectable)
+loadings <- as.data.frame(unclass(pca$loadings))
+loadings$sample <- rownames(loadings)
+loadings$Group <- substr(loadings$sample, start=1, stop=4)
+
+vars <- pca$sdev^2
+Importance<-vars/sum(vars)
+adjust<-1-Importance[1]
+pca_adjusted<-Importance[2:length(Importance)]/adjust
+pca_df<-data.frame(adjusted_variance=pca_adjusted, PC=seq(1:length(pca_adjusted)))
+head(pca_df)
+#       adjusted_variance PC
+#Comp.2        0.11956917  1
+#Comp.3        0.10946641  2
+#Comp.4        0.09871527  3
+#Comp.5        0.09222794  4
+#Comp.6        0.09061796  5
+#Comp.7        0.08193742  6
+
+colnames(loadings)[2:13] <- paste("PC", seq(1:12), sep="")
+
+ggplot(loadings, aes(x=PC1, y=PC2, col=Group)) + geom_point(size=3) + theme_classic() + scale_colour_manual(values=c("palegreen2", "plum2", "grey60", "black")) + xlab("PC1 (12.0%)") + ylab("PC2 (10.9%)") + ggtitle("DNA hydroxymethylation")
+
+#with TGEE 3 and 4 removed
+pca <- princomp(hydroxy_values_detectable[,-(12:13)])
+loadings <- as.data.frame(unclass(pca$loadings))
+loadings$sample <- rownames(loadings)
+loadings$Group <- substr(loadings$sample, start=1, stop=4)
+
+vars <- pca$sdev^2
+Importance<-vars/sum(vars)
+adjust<-1-Importance[1]
+pca_adjusted<-Importance[2:length(Importance)]/adjust
+pca_df<-data.frame(adjusted_variance=pca_adjusted, PC=seq(1:length(pca_adjusted)))
+head(pca_df)
+
+colnames(loadings)[2:11] <- paste("PC", seq(1:10), sep="")
+
+ggplot(loadings, aes(x=PC1, y=PC2, col=Group)) + geom_point(size=3) + theme_classic() + scale_colour_manual(values=c("palegreen2", "plum2", "grey60", "black")) + ggtitle("DNA hydroxymethylation")
+```
+
+# PCA on beta values: variable sites
+
+```{r pca beta var, eval=F}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/all_EE_hmC_betas_CpG_10X_auto_var_noout.RData")
+
+pca <- princomp(betas_variable)
+loadings <- as.data.frame(unclass(pca$loadings))
+loadings$sample <- rownames(loadings)
+loadings$Group <- substr(loadings$sample, start=1, stop=4)
+
+vars <- pca$sdev^2
+Importance<-vars/sum(vars)
+adjust<-1-Importance[1]
+pca_adjusted<-Importance[2:length(Importance)]/adjust
+pca_df<-data.frame(adjusted_variance=pca_adjusted, PC=seq(1:length(pca_adjusted)))
+head(pca_df)
+#       adjusted_variance PC
+#Comp.2        0.11966794  1
+#Comp.3        0.10954819  2
+#Comp.4        0.09857370  3
+#Comp.5        0.09222787  4
+#Comp.6        0.09067001  5
+#Comp.7        0.08186120  6
+
+colnames(loadings)[2:13] <- paste("PC", seq(1:12), sep="")
+
+ggplot(loadings, aes(x=PC1, y=PC2, col=Group)) + geom_point(size=3) + theme_classic() + scale_colour_manual(values=c("palegreen2", "plum2", "grey60", "black")) + xlab("PC1 (12.0%)") + ylab("PC2 (11.8%)") + ggtitle("DNA hydroxymethylation")
+```

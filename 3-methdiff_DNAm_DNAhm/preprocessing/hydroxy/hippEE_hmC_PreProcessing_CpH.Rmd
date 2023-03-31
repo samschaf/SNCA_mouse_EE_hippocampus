@@ -1,0 +1,92 @@
+DecipherPD Mouse Enriched Environment Hippocampus Data Pre-Processing
+================================
+
+##### Analyst: Samantha Schaffner
+##### Date: Dec 7, 2022
+
+This project investigates the effects of genotype and lifestyle factors on the DNA methylome of C57BL/6 mice. Specifically, wild type and human SNCA transgenic mice (with a BAC insertion containing full-length human SNCA and all its regulatory elements) were reared to the age of either 6 or 12 months before sacrificing. A subset of 6 month old mice from both genotypes were exposed to a chronic stress paradigm, while a subset of 12 month old mice from both genotypes were exposed to an enriched environment paradigm. From all groups, hippocampus and striatum tissues were collected.
+
+DNA was extracted from mouse brain tissues and prepped for reduced representation bisulfite sequencing (RRBS) using either a bisulfite conversion (mC + hmC) or oxidatitve bisulfite conversion (mC only) protocol. Samples were pooled in groups of 8 and sequenced on an Illumina HiSeq2500 (75bp, paired-end) at the BC Genome Sciences Centre. Alignment and methylation ratio calculations were performed using the BSMAP pipeline.
+
+In this script, the QC'ed oxBS and BS data (filtered for read coverage and outliers) will be combined to estimate 5hmC levels.
+
+## Working directory and libraries
+```{r libraries, eval=F}
+.libPaths(c(.libPaths(), "/mnt/scratch/KoborLab/R_Libs/4.2", "/mnt/scratch/KoborLab/Personal_Folders/sschaffner/Rstudio/R/x86_64-pc-linux-gnu-library/4.0/"))
+library(BiSeq)
+library(GenomicRanges)
+library(gplots)
+library(RColorBrewer)
+library(lumi)
+library(reshape2)
+```
+
+## Loading oxBS/BS data
+
+```{r load data, eval-F}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpH/hippEE_oxBS_BSraw_CpH_10X_noout.RData")
+oxBS_betas <- methLevel(rawToRel(oxBS_BSraw_CpH_noout))
+rownames(oxBS_betas) <- paste(seqnames(oxBS_BSraw_CpH_noout), ranges(oxBS_BSraw_CpH_noout), sep=".")
+
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/bisulfite/CpH/all_EE_BS_betas_CpH_10X_noout.RData")
+BS_betas <- all_EE_noout
+
+nrow(oxBS_betas <- oxBS_betas[rownames(oxBS_betas) %in% rownames(BS_betas),]) #3,286,307
+nrow(BS_betas <- BS_betas[match(rownames(oxBS_betas),rownames(BS_betas)),]) #3,286,307
+all(rownames(oxBS_betas)==rownames(BS_betas)) #TRUE
+all(colnames(oxBS_betas)==colnames(BS_betas)) #TRUE
+
+rm(all_EE_noout, oxBS_BSraw_CpH_noout)
+```
+
+## Calculate hydroxymethylation levels
+I will calculate the hmC betas by subtracting the oxBS values (mC) from the BS values (mC + hmC).
+```{r hydroxy calc, eval=F}
+#subtraction
+hydroxy <- BS_betas - oxBS_betas
+
+#plot the distribution of hydroxy values
+hydroxy_sample <- hydroxy[sample(1:nrow(hydroxy),100000),]
+hydroxy_values_plot<-melt(hydroxy_sample)
+ggplot(hydroxy_values_plot, aes(value, group=variable))+geom_density(size=1, color="grey")+theme_bw()
+```
+![Density of all hydroxymethylation values](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpH/all_hydroxy_values.png)
+
+Most values are near zero, with spread on both sides. This indicates a fair number of values came out as negative after the subtraction. These negative values will be used as a detection threshold to eliminate technical noise.
+
+## Detectability threshold
+Next I will take the 95% quantile of negative hydroxymethylation values as a detectability threshold, and remove the sites whose values do not pass this threshold.
+```{r detectability, eval=F}
+# threshold for detectable (Rachel Edgar/Jonathan Mill method)
+neg_hydroxy_values<-hydroxy_values_plot[which(hydroxy_values_plot$value<0),]
+hydroxy_threshold<-abs(quantile(neg_hydroxy_values$value, 0.05))
+hydroxy_threshold #0.1038961
+
+mean_hydroxy_values<-rowMeans(hydroxy)
+hydroxy_values_detectable<-hydroxy[which(mean_hydroxy_values>=hydroxy_threshold),]
+(nrow(hydroxy_values_detectable)/nrow(hydroxy))*100 #0.005% (!) passed detectability threshold 
+nrow(hydroxy_values_detectable) #172 CpH sites had detectable hydroxymethylation (!)
+
+save(hydroxy_values_detectable, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpH/all_EE_hmC_betas_CpH_10X_noout.RData")
+
+#plot again
+hydroxy_values_plot<-melt(hydroxy_values_detectable)
+hydroxy_values_plot$group <- substr(hydroxy_values_plot$variable, start=1, stop=4)
+ggplot(hydroxy_values_plot, aes(value, group=variable, col=variable))+geom_density(size=1)+theme_bw() + facet_wrap(~group) + geom_vline(xintercept=0)
+
+ggplot(hydroxy_values_plot, aes(value, group=variable, color=group))+
+  geom_density(size=1)+theme_bw() + ggtitle("CpH hydroxymethylation (coverage-filtered)") + scale_color_manual(values=c("palegreen3","plum3","grey70","black"))
+```
+
+![Density of "detectable" hydroxymethylation values](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpH/beta_dist_10X.png)
+
+The vast majority of sites now show hydroxymethylation beta values >0. The data looks pretty messy overall, and there doesnt' seem to be a huge difference between WT and TG as observed at CpG sites.
+
+## Remove nonvariable sites
+```{r remove nonvar, eval=F}
+#Rachel's code for nonvariable 450k CpHs
+Variation<-function(x) {quantile(x, c(0.9), na.rm=T)[[1]]-quantile(x, c(0.1), na.rm=T)[[1]]}
+ref_range<-sapply(1:nrow(hydroxy_values_detectable), function(x) Variation(hydroxy_values_detectable[x,]))
+#Use a 10% threshold to match the 10X coverage filter
+nrow(hydroxy_variable <- hydroxy_values_detectable[which(ref_range>=0.1),]) #all sites pass variability filter
+```

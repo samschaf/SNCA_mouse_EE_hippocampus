@@ -1,0 +1,227 @@
+# Creating background annotation files for genomic and CpG island contexts
+### Author: Samantha Schaffner
+### Date: Dec 12, 2022
+
+Most cytosine sites are annotated to multiple features. In this script, I create a subsetted annotation where each site is annotated to the feature corresponding to its longest transcript, in order to capture the widest possible range of gene regulation.
+
+These background annotation files can be used for downstream analysis such as genomic feature enrichment and gene ontology enrichment.
+
+Note: this code should be run after completing "transcript_length.Rmd."
+
+##Load in your fully annotated object and longest transcript annotation
+The objects "results_anno.RData" and "longest_transcript.RData" were generated in the script "transcript_length.Rmd."
+```{r load objects, eval=F}
+.libPaths(c(.libPaths(), "/mnt/scratch/KoborLab/R_Libs/4.2", "/mnt/scratch/KoborLab/Personal_Folders/sschaffner/Rstudio/R/x86_64-pc-linux-gnu-library/4.0/"))
+library(lifecycle, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(scales, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(vctrs, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+
+library(annotatr)
+library(AnnotationHub)
+library(BiSeq)
+#library(biomaRt)
+
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/hmC_anno_CpG.RData")
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/longest_transcript_hmC_CpG.RData")
+
+#create a unique transcript-cpg ID for matching
+hmC_anno$annot.tx_id <- sapply(1:nrow(hmC_anno), function(x) { unlist(strsplit(hmC_anno$annot.tx_id[x], split="\\."))[1]})
+hmC_anno$tx_site <- paste(hmC_anno$site, hmC_anno$annot.tx_id, sep=".")
+longest_transcript[longest_transcript=="none"] <- NA
+longest_transcript <- longest_transcript[complete.cases(names(longest_transcript))]
+
+#How many sites have a transcript?
+length(longest_transcript[complete.cases(longest_transcript)]) #13,674
+
+longest_tx_site <- paste(names(longest_transcript), longest_transcript, sep=".")
+nrow(hmC_anno_sub <- hmC_anno[hmC_anno$tx_site %in% longest_tx_site,]) #30,898
+length(unique(hmC_anno_sub$site)) #19,308
+length(unique(hmC_anno$site)) #19,308 - all sites have at least one annotation
+
+#Even after subsetting the annotation to the longest transcript, there are multiple features annotated per site.
+```
+
+#For those sites which are still annotated to multiple features, collapse the annotation to one feature per site
+
+Even though we already subset to longest transcript, some of the annotation categories from the annotatr package overlap with each other by definition. For example, a first exon could be labelled as both "mm10_genes_exons" and "mm10_genes_firstexons." See http://bioconductor.org/packages/release/bioc/vignettes/annotatr/inst/doc/annotatr-vignette.html#genic-annotations for a visual representation of where the annotar categories lie within a gene.
+
+In this step, I prioritize the annotation categories from most specific to most general. For example, if a feature is located in an exon-intron boundary, I'll assign that as the most specific feature for that sites.
+```{r specific anno, eval=F}
+#subset further to get a list of unique cytosine sites in the annotation
+results_anno_multi_genes_sub <- hmC_anno_sub[,c(1,2,3,12,13,14,15,16)]
+#remove any duplicate rows
+results_anno_multi_genes_sub <- distinct(results_anno_multi_genes_sub)
+length(unique_cpgs <- unique(results_anno_multi_genes_sub$site)) #19,308
+
+#Within each longest transcript annotation, determine what features would over-ride each other...
+#Focusing on gene rather than CpG island features first
+unique(results_anno_multi_genes_sub$annot.type)
+# [1] "mm10_genes_introns"              "mm10_genes_exonintronboundaries" "mm10_genes_intronexonboundaries" "mm10_genes_intergenic"          
+# [5] "mm10_cpg_inter"                  "mm10_genes_exons"                "mm10_genes_3UTRs"                "mm10_genes_firstexons"          
+# [9] "mm10_genes_promoters"            "mm10_lncrna_gencode"             "mm10_genes_1to5kb"               "mm10_genes_5UTRs"               
+#[13] "mm10_cpg_shelves"                "mm10_cpg_shores"                 "mm10_cpg_islands"       
+
+#Go from the most specific annotation to the most general annotation.
+specific_gene <- rep(NA, length(unique_cpgs))
+specific_tx <- rep(NA, length(unique_cpgs))
+specific_anno <- rep(NA, length(unique_cpgs))
+  
+for (x in 1:length(unique_cpgs)){
+  print(x)
+  cpg_set <- results_anno_multi_genes_sub[results_anno_multi_genes_sub$site==unique_cpgs[x],]
+  if (nrow(cpg_set)>1){
+    if ("mm10_lncrna_gencode" %in% cpg_set$annot.type){
+      specific_tx[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_lncrna_gencode","annot.tx_id"])
+      specific_gene[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_lncrna_gencode","annot.symbol"])
+      specific_anno[x] <- "mm10_lncrna_gencode"
+    }
+    if ("mm10_genes_exonintronboundaries" %in% cpg_set$annot.type){
+      specific_tx[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_exonintronboundaries","annot.tx_id"])
+      specific_gene[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_exonintronboundaries","annot.symbol"])
+      specific_anno[x] <- "mm10_genes_exonintronboundaries"
+    }
+    else if ("mm10_genes_intronexonboundaries" %in% cpg_set$annot.type){
+      specific_tx[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_intronexonboundaries","annot.tx_id"])
+      specific_gene[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_intronexonboundaries","annot.symbol"])
+      specific_anno[x] <- "mm10_genes_intronexonboundaries"
+    }
+    else if ("mm10_genes_promoters" %in% cpg_set$annot.type){
+      specific_tx[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_promoters","annot.tx_id"])
+      specific_gene[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_promoters","annot.symbol"])
+      specific_anno[x] <- "mm10_genes_promoters"
+    }
+    else if ("mm10_genes_firstexon" %in% cpg_set$annot.type){
+      specific_tx[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_firstexon","annot.tx_id"])
+      specific_gene[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_firstexon","annot.symbol"])
+      specific_anno[x] <- "mm10_genes_firstexon"
+    }
+    else if ("mm10_genes_5UTRs" %in% cpg_set$annot.type){
+      specific_tx[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_5UTRs","annot.tx_id"])
+      specific_gene[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_5UTRs","annot.symbol"])
+      specific_anno[x] <- "mm10_genes_5UTRs"
+    }
+    else if ("mm10_genes_3UTRs" %in% cpg_set$annot.type){
+      specific_tx[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_3UTRs","annot.tx_id"])
+      specific_gene[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_3UTRs","annot.symbol"])
+      specific_anno[x] <- "mm10_genes_3UTRs"
+    }
+    else if ("mm10_genes_1to5kb" %in% cpg_set$annot.type){
+      specific_tx[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_1to5kb","annot.tx_id"])
+      specific_gene[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_1to5kb","annot.symbol"])
+      specific_anno[x] <- "mm10_genes_1to5kb"
+    }
+    else if ("mm10_genes_exons" %in% cpg_set$annot.type){
+      specific_tx[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_exons","annot.tx_id"])
+      specific_gene[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_exons","annot.symbol"])
+      specific_anno[x] <- "mm10_genes_exons"
+    }
+    else if ("mm10_genes_introns" %in% cpg_set$annot.type){
+      specific_tx[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_introns","annot.tx_id"])
+      specific_gene[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_introns","annot.symbol"])
+      specific_anno[x] <- "mm10_genes_introns"
+    }
+    else if ("mm10_genes_cds" %in% cpg_set$annot.type){
+      specific_tx[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_cds","annot.tx_id"])
+      specific_gene[x] <- unique(cpg_set[cpg_set$annot.type=="mm10_genes_cds","annot.symbol"])
+      specific_anno[x] <- "mm10_genes_cds"
+    }
+  }
+  else if (nrow(cpg_set)==1){ 
+    specific_tx[x] <- cpg_set$annot.tx_id[x]
+    specific_gene[x] <- cpg_set$annot.symbol[x]
+    specific_anno[x] <- cpg_set$annot.type }
+  
+}
+
+nrow(cpg_anno <- data.frame(site=unique_cpgs, gene=specific_gene, tx=specific_tx, genomic_anno=specific_anno)) #19,308
+unique(cpg_anno$genomic_anno) #some CpG island annotations are still in there; these would be intergenic sites (above loop would catch any other gene-associated annotations present)
+cpg_anno$genomic_anno[cpg_anno$genomic_anno %in% c("mm10_cpg_islands", "mm10_cpg_shores","mm10_cpg_shelves","mm10_cpg_inter")] <- NA
+cpg_anno$genomic_anno <- as.character(cpg_anno$genomic_anno)
+cpg_anno$genomic_anno[is.na(cpg_anno$genomic_anno)] <- "mm10_genes_intergenic"
+```
+
+##Add CpG island context annotation
+```{r cgi context, eval=F}
+#Now, annotate CpG island context.
+#cpg islands, etc. annotation is only in the results without genes
+nrow(results_nogenes <- hmC_anno[hmC_anno$annot.type %in% c("mm10_cpg_inter", "mm10_cpg_islands", "mm10_cpg_shelves", "mm10_cpg_shores"),]) #19,308
+cpg_anno_cgi <- results_nogenes
+
+cpg_anno_cgi <- cpg_anno_cgi[match(cpg_anno$site, cpg_anno_cgi$site),]
+all.equal(cpg_anno_cgi$site, as.character(cpg_anno$site)) #TRUE
+cpg_anno$cgi_anno <- cpg_anno_cgi$annot.type
+
+write.table(cpg_anno, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/cpg_anno_hmC.txt", sep="\t")
+```
+
+##Enhancer and promoter annotations from ChIP-seq
+Added Oct 6, 2021. See "enhancers_ZW.R" and "promoters_ZW.R" in KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/ChIPseq/Zinah_Wassouf_data/consensus_peaks.
+```{r enh prom, eval=F}
+enactive <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/consensus_peaks/enhancers_active.txt")
+enpoised <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/consensus_peaks/enhancers_poised.txt")
+promoters <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/consensus_peaks/promoters.txt")
+
+unique(cpg_anno$genomic_anno)
+# [1] "mm10_genes_introns"              "mm10_genes_exonintronboundaries" "mm10_genes_intergenic"           "mm10_genes_exons"               
+# [5] "mm10_genes_intronexonboundaries" "mm10_genes_promoters"            "mm10_genes_3UTRs"                "mm10_genes_1to5kb"              
+# [9] "mm10_genes_5UTRs"                "mm10_lncrna_gencode"          
+
+library(GenomicRanges)
+cpg_anno$site <- as.character(cpg_anno$site)
+cpg_ranges <- GRanges(seqnames=sapply(cpg_anno$site, function(x) unlist(strsplit(x, split=": "))[1]), ranges=IRanges(start=as.numeric(sapply(cpg_anno$site, function(x) unlist(strsplit(x, split=": "))[2])), end=as.numeric(sapply(cpg_anno$site, function(x) unlist(strsplit(x, split=": "))[2]))), mcols=cpg_anno$site)
+
+enactive_ranges <- GRanges(seqnames=enactive$seqnames, ranges=IRanges(start=enactive$start, end=enactive$end))
+enpoised_ranges <- GRanges(seqnames=enpoised$seqnames, ranges=IRanges(start=enpoised$start, end=enpoised$end))
+promoters_ranges <- GRanges(seqnames=promoters$seqnames, ranges=IRanges(start=promoters$start, end=promoters$end))
+
+cpg_enactive <- as.data.frame(subsetByOverlaps(cpg_ranges, enactive_ranges))
+cpg_enpoised <- as.data.frame(subsetByOverlaps(cpg_ranges, enpoised_ranges))
+cpg_promoters <- as.data.frame(subsetByOverlaps(cpg_ranges, promoters_ranges))
+
+#checking how the old annotations map onto the new ones
+cpg_anno$genomic_anno <- as.factor(cpg_anno$genomic_anno)
+
+#active enhancers
+summary(cpg_anno[cpg_anno$site %in% cpg_enactive$mcols,"genomic_anno"])
+#              mm10_genes_1to5kb                mm10_genes_3UTRs                mm10_genes_5UTRs mm10_genes_exonintronboundaries 
+#                             78                              44                               2                             331 
+#               mm10_genes_exons           mm10_genes_intergenic mm10_genes_intronexonboundaries              mm10_genes_introns 
+#                            106                             331                             107                            1443 
+#           mm10_genes_promoters             mm10_lncrna_gencode 
+#                             33                               1 
+
+#poised enhancers
+summary(cpg_anno[cpg_anno$site %in% cpg_enpoised$mcols,"genomic_anno"])
+#              mm10_genes_1to5kb                mm10_genes_3UTRs                mm10_genes_5UTRs mm10_genes_exonintronboundaries 
+#                              4                               7                               3                              65 
+#               mm10_genes_exons           mm10_genes_intergenic mm10_genes_intronexonboundaries              mm10_genes_introns 
+#                             13                             115                               5                             237 
+#           mm10_genes_promoters             mm10_lncrna_gencode 
+#                              2                               0 
+
+#promoters
+summary(cpg_anno[cpg_anno$site %in% cpg_promoters$mcols,"genomic_anno"])
+#              mm10_genes_1to5kb                mm10_genes_3UTRs                mm10_genes_5UTRs mm10_genes_exonintronboundaries 
+#                            218                             113                              11                             503 
+#               mm10_genes_exons           mm10_genes_intergenic mm10_genes_intronexonboundaries              mm10_genes_introns 
+#                            227                             172                             159                             710 
+#           mm10_genes_promoters             mm10_lncrna_gencode 
+#                            124                              11 
+
+
+#using ChIP-seq annotations as the most "specific"
+str(cpg_anno$genomic_anno) #should be character
+cpg_anno$genomic_anno <- as.character(cpg_anno$genomic_anno)
+cpg_anno[cpg_anno$site %in% cpg_enactive$mcols,"genomic_anno"] <- "enhancers_active"
+cpg_anno[cpg_anno$site %in% cpg_enpoised$mcols,"genomic_anno"] <- "enhancers_poised"
+cpg_anno[cpg_anno$site %in% cpg_promoters$mcols,"genomic_anno"] <- "promoters_active"
+
+unique(cpg_anno$genomic_anno)
+# [1] "enhancers_poised"                "mm10_genes_introns"              "mm10_genes_exonintronboundaries" "mm10_genes_intergenic"          
+# [5] "enhancers_active"                "mm10_genes_intronexonboundaries" "promoters_active"                "mm10_genes_promoters"           
+# [9] "mm10_genes_3UTRs"                "mm10_genes_1to5kb"               "mm10_genes_exons"                "mm10_lncrna_gencode"            
+#[13] "mm10_genes_5UTRs"        
+
+write.table(cpg_anno, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/cpg_anno_hmC_ChIP.txt", sep="\t")
+```
+
