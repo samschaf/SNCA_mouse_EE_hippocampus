@@ -1,0 +1,202 @@
+# Multi-Omic integration in EE mouse hippocampus: PLS-DA
+
+## Samantha Schaffner
+## Jan 9, 2023
+
+Partial least squares discriminant analysis (PLS-DA) is a supervised classification method, which outputs a pre-specified number of latent components discriminating phenotypic groups. This is an alternative to PCA, where I can specifically ask what factors contribute to classifying groups, and to what degree each omic drives the classification along each factor.
+
+## Libraries
+
+```{r libraries, eval=F}
+.libPaths(c(.libPaths(), "/mnt/scratch/KoborLab/R_Libs/4.2", "/mnt/scratch/KoborLab/Personal_Folders/sschaffner/Rstudio/R/x86_64-pc-linux-gnu-library/4.0/"))
+library(lifecycle, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(scales, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(vctrs, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(BiSeq)
+library(mixOmics)
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+library(DescTools)
+library(gprofiler2)
+```
+
+
+## Reading in and formatting individual 'omics data
+
+```{r ind omics, eval=F}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/6-processed_RNAseq_data/nCounts_EE_HIP.RData") #use nCounts_mnc50 object. rownames are ensembl genes, colnames sample IDs
+#nCounts: all genes with >= 1 read
+#nCounts_mnc50: all genes with >= 50 reads (used for DE analysis)
+nrow(nCounts_mnc50) #12286
+length(rownames(nCounts_mnc50)[grep("ENSMUSG", rownames(nCounts_mnc50))]) #12286
+#no human SNCA transgene (all are aligned to mouse genes)
+length(rownames(nCounts_mnc50)[grep("ENSMUSG00000056870", rownames(nCounts_mnc50))]) #0 - no Gulp1 either
+
+mRNA <- t(nCounts_mnc50)
+sampleInfo$environment <- gsub("STD", "SE", sampleInfo$environment)
+sampleInfo$ID <- paste(sampleInfo$genotype, sampleInfo$environment, sep="")
+sampleInfo$ID <- paste(sampleInfo$ID, rep(seq(1:4),4), sep="")
+all.equal(sampleInfo$run, rownames(mRNA)) #TRUE
+rownames(mRNA) <- sampleInfo$ID
+rownames(mRNA)
+#order: WTSE, TGSE, WTEE, TGEE
+mRNA <- mRNA[c(5:8,13:16,1:4,9:12),]
+rownames(mRNA)
+
+#converting ensembl gene IDs to gene names
+ens_ext <- gconvert(colnames(mRNA), organism="mmusculus", target="UCSC", filter_na=FALSE)
+ncol(mRNA) #12,286
+length(ens_ext) #7
+
+#DNAm/DNAhm
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/oxBS_BSraw_CpG_10X_noout_auto_var.RData")
+DNAm <- t(as.matrix(methLevel(rawToRel(BSraw_auto_var))))
+rownames(DNAm) #"WTSE1" "WTSE2" "WTSE3" "WTSE4" "WTEE1" "WTEE2" "WTEE3" "TGSE1" "TGSE2" "TGSE3" "TGEE2" "TGEE3" "TGEE4"
+#order: WTSE, TGSE, WTEE, TGEE
+DNAm <- DNAm[c(1:4,8:10,5:7,11:13),]
+
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/all_EE_hmC_betas_CpG_10X_auto_var_noout.RData")
+DNAhm <- t(as.matrix(betas_variable))
+rownames(DNAhm) #"WTSE1" "WTSE2" "WTSE3" "WTSE4" "WTEE1" "WTEE2" "WTEE3" "TGSE1" "TGSE2" "TGSE3" "TGEE2" "TGEE3" "TGEE4"
+#order: WTSE, TGSE, WTEE, TGEE
+DNAhm <- DNAhm[c(1:4,8:10,5:7,11:13),]
+
+#ChIPseq: concentrations
+H3K4me1 <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/conc_H3K4me1_2.csv")
+H3K4me1.mat <- t(as.matrix(H3K4me1[,3:18]))
+colnames(H3K4me1.mat) <- H3K4me1$coord
+
+H3K27ac <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/conc_H3K27ac_2.csv")
+H3K27ac.mat <- t(as.matrix(H3K27ac[,3:18]))
+colnames(H3K27ac.mat) <- H3K27ac$coord
+
+H3K4me3 <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/conc_H3K4me3_2.csv")
+H3K4me3.mat <- t(as.matrix(H3K4me3[,3:18]))
+colnames(H3K4me3.mat) <- H3K4me3$coord
+
+all(rownames(H3K4me1.mat)==rownames(H3K4me3.mat)) #TRUE
+all(rownames(H3K4me1.mat)==rownames(H3K27ac.mat)) #TRUE
+rownames(H3K4me1.mat) #checking order: WTSE, TGSE, WTEE, TGEE (4 per group)
+
+ncol(mRNA) #12,286 genes
+ncol(DNAm) #329,507 cytosines
+ncol(DNAhm) #19,308 cytosines
+ncol(H3K4me1.mat) #120,387 peaks
+ncol(H3K4me3.mat) #36,517 peaks
+ncol(H3K27ac.mat) #97,234 peaks
+```
+
+## Running PLS-DA
+
+### mRNA
+```{r mRNA PLS, eval=F}
+Y_4n <- c(rep("WTSE",4), rep("TGSE",4), rep("WTEE",4), rep("TGEE",4))
+
+#2 components
+plsda_mRNA <- block.plsda(X=list(mRNA=mRNA), Y=Y_4n, ncomp=2)
+save(plsda_mRNA, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/plsda/plsda_mRNA_2comp.RData")
+
+data.frame(plsda_mRNA$prop_expl_var)
+#           mRNA         Y
+#comp1 0.1882356 0.3333333
+#comp2 0.1510130 0.3324155
+
+plotIndiv(plsda_mRNA, col.per.group=c("palegreen3","plum3","grey60","black"), size.subtitle=1, style="lattice",pch=19,legend=TRUE,X.label="PLS-DA C1 (19%)", Y.label="PLS-DA C2 (15%)", size.xlabel=0.8, size.ylabel = 0.8, size.legend=0.8, size.legend.title=1, subtitle="mRNA")
+
+#3 components
+plsda_mRNA <- block.plsda(X=list(mRNA=mRNA), Y=Y_4n, ncomp=3)
+plotIndiv(plsda_mRNA, col.per.group=c("palegreen3","plum3","grey60","black"), title="Component 1 vs 2", size.title=1, size.subtitle=1, style="lattice",pch=19,legend=TRUE,X.label="PLS-DA component 1", Y.label="PLS-DA component 2", size.xlabel=0.8, size.ylabel = 0.8, size.legend=0.8, size.legend.title=1, subtitle="mRNA", comp=c(1,2))
+plotIndiv(plsda_mRNA, col.per.group=c("palegreen3","plum3","grey60","black"), title="Component 2 vs 3", size.title=1, size.subtitle=1, style="lattice",pch=19,legend=TRUE,X.label="PLS-DA component 2", Y.label="PLS-DA component 3", size.xlabel=0.8, size.ylabel = 0.8, size.legend=0.8, size.legend.title=1, subtitle="mRNA", comp=c(2,3))
+
+#4 components
+plsda_mRNA <- block.plsda(X=list(mRNA=mRNA), Y=Y_4n, ncomp=4)
+plotIndiv(plsda_mRNA, col.per.group=c("palegreen3","plum3","grey60","black"), title="Component 1 vs 2", size.title=1, size.subtitle=1, style="lattice",pch=19,legend=TRUE,X.label="PLS-DA component 1", Y.label="PLS-DA component 2", size.xlabel=0.8, size.ylabel = 0.8, size.legend=0.8, size.legend.title=1, subtitle="mRNA", comp=c(1,2))
+plotIndiv(plsda_mRNA, col.per.group=c("palegreen3","plum3","grey60","black"), title="Component 2 vs 3", size.title=1, size.subtitle=1, style="lattice",pch=19,legend=TRUE,X.label="PLS-DA component 2", Y.label="PLS-DA component 3", size.xlabel=0.8, size.ylabel = 0.8, size.legend=0.8, size.legend.title=1, subtitle="mRNA", comp=c(2,3))
+plotIndiv(plsda_mRNA, col.per.group=c("palegreen3","plum3","grey60","black"), title="Component 3 vs 4", size.title=1, size.subtitle=1, style="lattice",pch=19,legend=TRUE,X.label="PLS-DA component 3", Y.label="PLS-DA component 4", size.xlabel=0.8, size.ylabel = 0.8, size.legend=0.8, size.legend.title=1, subtitle="mRNA", comp=c(3,4))
+
+#3 samples, 2 components
+mRNA_3n <- mRNA[-c(8,12,13),]
+Y_3n <- c(rep("WTSE",4), rep("TGSE",3), rep("WTEE",3), rep("TGEE",3))
+plsda_mRNA_3n <- block.plsda(X=list(mRNA=mRNA_3n), Y=Y_3n, ncomp=2)
+plotIndiv(plsda_mRNA_3n, col.per.group=c("palegreen3","plum3","grey60","black"), title="Component 1 vs 2", size.title=1, size.subtitle=1, style="lattice",pch=19,legend=TRUE,X.label="PLS-DA component 1", Y.label="PLS-DA component 2", size.xlabel=0.8, size.ylabel = 0.8, size.legend=0.8, size.legend.title=1)
+```
+![mRNA PLS-DA](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/plsda/plsda_mRNA.png)
+
+### DNAhm
+```{r DNAhm PLS, eval=F}
+Y_3n <- c(rep("WTSE",4), rep("TGSE",3), rep("WTEE",3), rep("TGEE",3))
+
+#2 components
+plsda_DNAhm <- block.plsda(X=list(DNAhm=DNAhm), Y=Y_3n, ncomp=2)
+save(plsda_DNAhm, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/plsda/plsda_DNAhm_2comp.RData")
+
+data.frame(plsda_DNAhm$prop_expl_var)
+#           DNAhm         Y
+#comp1 0.16653842 0.3361649
+#comp2 0.07903954 0.3397282
+
+plotIndiv(plsda_DNAhm, col.per.group=c("palegreen3","plum3","grey60","black"), size.subtitle=1, style="lattice",pch=19,legend=TRUE,X.label="PLS-DA C1 (17%)", Y.label="PLS-DA C2 (7.9%)", size.xlabel=0.8, size.ylabel = 0.8, size.legend=0.8, size.legend.title=1, subtitle="DNAhm")
+```
+![DNAhm PLS-DA](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/plsda/plsda_DNAhm.png)
+### DNAm
+```{r DNAm PLS, eval=F}
+#2 components
+plsda_DNAm <- block.plsda(X=list(DNAm=DNAm), Y=Y_3n, ncomp=2)
+save(plsda_DNAm, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/plsda/plsda_DNAm_2comp.RData")
+
+data.frame(plsda_DNAm$prop_expl_var)
+#            DNAm         Y
+#comp1 0.09851813 0.3369108
+#comp2 0.08680558 0.3374140
+
+plotIndiv(plsda_DNAm, col.per.group=c("palegreen3","plum3","grey60","black"), size.subtitle=1, style="lattice",pch=19,legend=TRUE,X.label="PLS-DA C1 (9.9%)", Y.label="PLS-DA C2 (8.7%)", size.xlabel=0.8, size.ylabel = 0.8, size.legend=0.8, size.legend.title=1, subtitle="DNAm")
+```
+![DNAm PLS-DA](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/plsda/plsda_DNAm.png)
+
+### H3K4me1
+```{r H3K4me1 PLS, eval=F}
+#2 components
+plsda_H3K4me1 <- block.plsda(X=list(H3K4me1=H3K4me1.mat), Y=Y_4n, ncomp=2)
+save(plsda_H3K4me1, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/plsda/plsda_H3K4me1_2comp.RData")
+
+data.frame(plsda_H3K4me1$prop_expl_var)
+#        H3K4me1         Y
+#comp1 0.2076213 0.3333333
+#comp2 0.1337763 0.3332811
+
+plotIndiv(plsda_H3K4me1, col.per.group=c("palegreen3","plum3","grey60","black"), size.subtitle=1, style="lattice",pch=19,legend=TRUE,X.label="PLS-DA C1 (21%)", Y.label="PLS-DA C2 (13%)", size.xlabel=0.8, size.ylabel = 0.8, size.legend=0.8, size.legend.title=1, subtitle="H3K4me1")
+```
+![H3K4me1 PLS-DA](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/plsda/plsda_H3K4me1.png)
+
+### H3K4me3
+```{r H3K4me3 PLS, eval=F}
+#2 components
+plsda_H3K4me3 <- block.plsda(X=list(H3K4me3=H3K4me3.mat), Y=Y_4n, ncomp=2)
+save(plsda_H3K4me3, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/plsda/plsda_H3K4me3_2comp.RData")
+
+data.frame(plsda_H3K4me3$prop_expl_var)
+#         H3K4me3         Y
+#comp1 0.20230328 0.3333333
+#comp2 0.08311913 0.3321087
+
+plotIndiv(plsda_H3K4me3, col.per.group=c("palegreen3","plum3","grey60","black"), size.subtitle=1, style="lattice",pch=19,legend=TRUE,X.label="PLS-DA C1 (20%)", Y.label="PLS-DA C2 (8.3%)", size.xlabel=0.8, size.ylabel = 0.8, size.legend=0.8, size.legend.title=1, subtitle="H3K4me3")
+```
+![H3K4me3 PLS-DA](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/plsda/plsda_H3K4me3.png)
+
+### H3K27ac
+```{r H3K27ac PLS, eval=F}
+#2 components
+plsda_H3K27ac <- block.plsda(X=list(H3K27ac=H3K27ac.mat), Y=Y_4n, ncomp=2)
+save(plsda_H3K27ac, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/plsda/plsda_H3K27ac_2comp.RData")
+
+data.frame(plsda_H3K27ac$prop_expl_var)
+#         H3K27ac         Y
+#comp1 0.15691624 0.3333333
+#comp2 0.07024396 0.3333328
+
+plotIndiv(plsda_H3K27ac, col.per.group=c("palegreen3","plum3","grey60","black"), size.subtitle=1, style="lattice",pch=19,legend=TRUE,X.label="PLS-DA C1 (16%)", Y.label="PLS-DA C2 (7.0%)", size.xlabel=0.8, size.ylabel = 0.8, size.legend=0.8, size.legend.title=1, subtitle="H3K27ac")
+```
+![H3K27ac PLS-DA](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/plsda/plsda_H3K27ac.png)
+
+

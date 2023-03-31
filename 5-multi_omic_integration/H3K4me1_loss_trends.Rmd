@@ -1,0 +1,411 @@
+## Investigating 'omics patterns in genes with DNAhm loss
+### Samantha Schaffner
+### Mar 17, 2022
+
+## Libraries
+```{r}
+.libPaths(c(.libPaths(), "/mnt/scratch/KoborLab/R_Libs/4.2", "/mnt/scratch/KoborLab/Personal_Folders/sschaffner/Rstudio/R/x86_64-pc-linux-gnu-library/4.0/"))
+library(lifecycle, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(scales, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(vctrs, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+
+library(reshape2)
+library(ggplot2)
+library(DescTools)
+library(readxl)
+library(BiSeq)
+library(gridExtra)
+library(Gviz)
+library(plyr)
+library(rtracklayer)
+library(GenomicRanges)
+library(gplots)
+library(RColorBrewer)
+library(gprofiler2)
+#genes with differential H3K4me1 and expression
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/genes_mRNA_H3K4me1_47.RData") #"set21" (47 genes)
+```
+
+## Transcriptional regulators, kinases, and phosphatases
+Mouse genes annotated to the GO:MF terms "transcription regulator activity", "protein kinase activity", and "phosphatase activity" were downloaded from geneontology.org.
+```{r}
+tx_reg <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/6-processed_RNAseq_data/GOMF_transcription_regulator_activity.txt", header=F)
+colnames(tx_reg) <- c("ID", "gene")
+
+kinase <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/6-processed_RNAseq_data/GOMF_protein_kinase_activity.txt", header=F)
+colnames(kinase) <- c("ID", "gene")
+
+phos <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/6-processed_RNAseq_data/GOMF_phosphatase_activity.txt", header=F)
+colnames(phos) <- c("ID", "gene")
+
+length(set21[set21 %in% c(tx_reg$gene, kinase$gene, phos$gene)]) #6/37 (16%)
+#similar to the 13% seen in TGSE/TGEE candidates (reported 40% in Wassouf et al 2018)
+set21[set21 %in% tx_reg$gene] #"Glis2"  "Etv4"   "Hivep1" "Zfhx2" 
+set21[set21 %in% kinase$gene] #"Rps6ka2" "Acvr2a" 
+set21[set21 %in% phos$gene] #none
+````
+
+## Plotting how these genes behave in all comparisons
+
+## mRNA expression
+```{r}
+RNA_WTSE_TGSE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/6-processed_RNAseq_data/mmus_hippo12m_TG_STD_vs_WT_STD.csv")
+RNA_WTSE_WTEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/6-processed_RNAseq_data/mmus_hippo12m_WT_EE_vs_WT_STD.csv")
+RNA_WTEE_TGEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/6-processed_RNAseq_data/mmus_hippo12m_TG_EE_vs_WT_EE.csv")
+RNA_TGSE_TGEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/6-processed_RNAseq_data/mmus_hippo12m_TG_EE_vs_TG_STD.csv")
+
+all.equal(RNA_WTSE_TGSE$mgi_symbol, RNA_WTSE_WTEE$mgi_symbol, RNA_WTEE_TGEE$mgi_symbol, RNA_TGSE_TGEE$mgi_symbol) #TRUE
+
+n <- nrow(RNA_WTSE_TGSE)
+RNA_FC <- data.frame(Ensembl=RNA_WTSE_TGSE$ensembl, Gene=RNA_WTSE_TGSE$mgi_symbol,Comparison=c(rep("TGSE_WTSE",n), rep("WTEE_WTSE",n), rep("TGEE_WTEE",n), rep("TGEE_TGSE",n)), log2FC=c(RNA_WTSE_TGSE$log2FoldChange, RNA_WTSE_WTEE$log2FoldChange, RNA_WTEE_TGEE$log2FoldChange, RNA_TGSE_TGEE$log2FoldChange), padj=c(RNA_WTSE_TGSE$padj, RNA_WTSE_WTEE$padj, RNA_WTEE_TGEE$padj, RNA_TGSE_TGEE$padj))
+
+RNA_FC$Comparison <- as.factor(RNA_FC$Comparison)
+RNA_FC$Comparison <- reorder.factor(RNA_FC$Comparison, new.order=c("TGSE_WTSE", "WTEE_WTSE", "TGEE_WTEE", "TGEE_TGSE"))
+
+RNA_FC_sub <- RNA_FC[RNA_FC$Gene%in% set21,]
+length(unique(RNA_FC_sub$Ensembl)) #37
+length(unique(RNA_FC_sub$Gene)) #37 with mgi symbol
+for (i in 1:nrow(RNA_FC_sub)){
+  if (is.na(RNA_FC_sub$Gene[i])){ RNA_FC_sub$Gene[i] <- RNA_FC_sub$Ensembl[i] }
+}
+
+#tile with continuous FC
+limit <- max(abs(RNA_FC_sub$log2FC))*c(-1,1)
+ggplot(RNA_FC_sub, aes(x=Comparison, y=Gene, fill=log2FC)) + geom_tile() + theme_bw() + theme(axis.title.y=element_blank(), axis.text.x=element_text(angle=90, hjust=1), plot.title=element_text(hjust=0.5, vjust=1, size=12), plot.subtitle = element_text(hjust=0.5, size=8)) +  scale_fill_distiller(palette="RdBu", direction=1, limit=limit) + labs(title="Genes with differential\nH3K4me1 and expression", subtitle="TGSE vs WTSE") + geom_text(label=round(RNA_FC_sub$padj,2))
+
+### plotting counts
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/6-processed_RNAseq_data/nCounts_EE_HIP.RData") #use nCounts_mnc50 object. rownames are ensembl genes, colnames sample IDs
+sampleInfo <- as.data.frame(sampleInfo)
+sampleInfo$group <- paste(sampleInfo$genotype,sampleInfo$environment,sep="")
+
+counts_sub <- nCounts_mnc50[rownames(nCounts_mnc50) %in% RNA_FC_sub$Ensembl,]
+ens_to_ext <- RNA_FC_sub[match(rownames(counts_sub), RNA_FC_sub$Ensembl),c("Ensembl","Gene")]
+all.equal(rownames(counts_sub), ens_to_ext$Ensembl)
+rownames(counts_sub) <- ens_to_ext$Gene
+counts_sub <- as.data.frame(t(counts_sub))
+all.equal(rownames(counts_sub), sampleInfo$run) #TRUE
+counts_sub <- as.data.frame(t(as.matrix(counts_sub)))
+counts_scaled <- as.data.frame(apply(counts_sub, 1, function(x) scale(x)))
+rownames(counts_scaled) <- paste(sampleInfo$group, rep(1:4,4), sep="")
+#counts_scaled$rowmean <- rowMeans(counts_scaled)
+counts_scaled$group <- sampleInfo$group
+
+counts_melt <- melt(counts_scaled, id.vars=c("group"))
+colnames(counts_melt)[2] <- "Gene"
+counts_melt$group <- gsub("STD", "SE", counts_melt$group)
+counts_melt$group <- as.factor(counts_melt$group)
+counts_melt$group <- reorder.factor(counts_melt$group, new.order=c("WTSE","TGSE","WTEE","TGEE"))
+limit <- max(abs(counts_melt$value))*c(-1,1)
+
+
+## individual Per1 expression plot
+#get ensembl gene IDs to cross reference counts matrix
+mRNA_TGEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/6-processed_RNAseq_data/mmus_hippo12m_TG_EE_vs_TG_STD.csv")
+mRNA_TGEE <- mRNA_TGEE[mRNA_TGEE$mgi_symbol %in% set21,]
+mRNA_TGEE <- mRNA_TGEE[complete.cases(mRNA_TGEE$mgi_symbol),]
+ensgenes <- mRNA_TGEE$ensembl
+all(ensgenes %in% rownames(nCounts_mnc50)) #TRUE
+
+counts_sub <- nCounts_mnc50[rownames(nCounts_mnc50) %in% ensgenes,] #37 genes
+counts_sub <- as.data.frame(t(counts_sub))
+all.equal(rownames(counts_sub), sampleInfo$run) #TRUE
+mRNA_TGEE <- mRNA_TGEE[match(colnames(counts_sub), mRNA_TGEE$ensembl),]
+all.equal(mRNA_TGEE$ensembl, colnames(counts_sub)) #TRUE
+colnames(counts_sub) <- mRNA_TGEE$mgi_symbol
+counts_sub$group <- sampleInfo$group
+
+mRNA_melt <- melt(counts_sub, id.vars="group")
+colnames(mRNA_melt)[2] <- "Gene"
+mRNA_melt$group <- gsub("STD", "SE", mRNA_melt$group)
+mRNA_melt$group <- as.factor(mRNA_melt$group)
+mRNA_melt$group <- reorder.factor(mRNA_melt$group, new.order=c("WTSE","TGSE","WTEE","TGEE"))
+
+#plot
+Per1 <- mRNA_melt[mRNA_melt$Gene=="Per1",]
+ggplot(Per1, aes(x=group,y=value,col=group)) + scale_colour_manual(values=c("black","plum3","gray60","palegreen3")) + theme_classic() + facet_wrap(~Gene) + geom_point() + geom_boxplot() + ylab("Read count") + theme(axis.title.x=element_blank()) + ylim(c(500,1000))
+
+#check stats
+RNA_WTSE_TGSE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/6-processed_RNAseq_data/mmus_hippo12m_TG_STD_vs_WT_STD.csv")
+RNA_WTSE_WTEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/6-processed_RNAseq_data/mmus_hippo12m_WT_EE_vs_WT_STD.csv")
+RNA_WTEE_TGEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/6-processed_RNAseq_data/mmus_hippo12m_TG_EE_vs_WT_EE.csv")
+RNA_TGSE_TGEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/6-processed_RNAseq_data/mmus_hippo12m_TG_EE_vs_TG_STD.csv")
+
+RNA_WTSE_TGSE[RNA_WTSE_TGSE$mgi_symbol%in%"Per1",c("log2FoldChange","padj")]
+#     log2FoldChange       padj
+#1863     -0.3938032 0.02048937
+
+RNA_WTSE_WTEE[RNA_WTSE_WTEE$mgi_symbol%in%"Per1",c("log2FoldChange","padj")]
+#     log2FoldChange      padj
+#1863    0.002087486 0.9989089
+
+RNA_TGSE_TGEE[RNA_TGSE_TGEE$mgi_symbol%in%"Per1",c("log2FoldChange","padj")]
+#     log2FoldChange      padj
+#1863       0.247815 0.2217322
+
+RNA_WTEE_TGEE[RNA_WTEE_TGEE$mgi_symbol%in%"Per1",c("log2FoldChange","padj")]
+#     log2FoldChange      padj
+#1863     -0.1480757 0.9359405
+```
+
+### H3K4me1: concentration
+```{r}
+H3K4me1_conc <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/conc_H3K4me1_2.csv")
+H3K4me1_TGEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_TGSE-TGEE_anno.csv")
+H3K4me1_TGEE <- H3K4me1_TGEE[H3K4me1_TGEE$coord %in% H3K4me1_conc$coord,]
+H3K4me1_conc <- H3K4me1_conc[match(H3K4me1_TGEE$coord, H3K4me1_conc$coord),]
+H3K4me1_scaled <- as.data.frame(t(apply(H3K4me1_conc[,3:ncol(H3K4me1_conc)], 1, function(x) scale(x))))
+colnames(H3K4me1_scaled) <- colnames(H3K4me1_conc[,3:ncol(H3K4me1_conc)])
+H3K4me1_scaled$rowmean <- rowMeans(H3K4me1_scaled)
+H3K4me1_scaled$mean_WTSE <- rowMeans(H3K4me1_scaled[,1:4])
+H3K4me1_scaled$mean_TGSE <- rowMeans(H3K4me1_scaled[,5:8])
+H3K4me1_scaled$mean_WTEE <- rowMeans(H3K4me1_scaled[,9:12])
+H3K4me1_scaled$mean_TGEE <- rowMeans(H3K4me1_scaled[,13:16])
+H3K4me1_scaled$coord <- H3K4me1_conc$coord
+all.equal(H3K4me1_scaled$coord, H3K4me1_TGEE$coord) #TRUE
+H3K4me1_scaled$Gene <- H3K4me1_TGEE$SYMBOL
+
+#adding annotations
+H3K4me1_anno <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_conspeaks_annotated.csv")
+H3K4me1_anno$annotation <- as.factor(H3K4me1_anno$annotation)
+H3K4me1_anno$annotation <- reorder.factor(H3K4me1_anno$annotation, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter", "5' UTR", "Exon", "Intron", "3' UTR", "Downstream", "Distal Intergenic"))
+H3K4me1_anno <- H3K4me1_anno[match(H3K4me1_scaled$coord, H3K4me1_anno$coord),]
+all.equal(H3K4me1_anno$coord, H3K4me1_scaled$coord) #TRUE
+H3K4me1_scaled$feature <- H3K4me1_anno$annotation
+#H3K4me1_scaled <- H3K4me1_scaled[,-1]
+
+#get lists of differentially bound peaks
+H3K4me1_WTSE_TGSE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_WTSE-TGSE_anno.csv")
+#removing Gulp1 (SNCA integration site)
+H3K4me1_WTSE_TGSE <- H3K4me1_WTSE_TGSE[-which(H3K4me1_WTSE_TGSE$FDR==min(H3K4me1_WTSE_TGSE$FDR)),]
+
+H3K4me1_WTEE_TGEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_WTEE-TGEE_anno.csv")
+#removing Gulp1 (SNCA integration site)
+H3K4me1_WTEE_TGEE <- H3K4me1_WTEE_TGEE[-which(H3K4me1_WTEE_TGEE$FDR==min(H3K4me1_WTEE_TGEE$FDR)),]
+
+H3K4me1_scaled <- H3K4me1_scaled[H3K4me1_scaled$coord %in% H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$FDR<=0.05 & abs(H3K4me1_WTSE_TGSE$Fold)>=0.5,"coord"] & H3K4me1_scaled$Gene %in% set21,]
+length(unique(H3K4me1_scaled$Gene)) #47 genes
+length(unique(H3K4me1_scaled$coord)) #67 peaks
+summary(H3K4me1_scaled$feature)
+#  Poised Enhancer   Active Enhancer   Active Promoter          Promoter            5' UTR              Exon 
+#                4                 8                 8                 6                 0                 3 
+#           Intron            3' UTR        Downstream Distal Intergenic 
+#               24                 2                 0                12 
+
+K4me1_melt <- melt(H3K4me1_scaled, id.vars=c("coord","Gene","feature","rowmean","mean_WTSE","mean_TGSE","mean_WTEE","mean_TGEE"))
+K4me1_melt$group <- substr(K4me1_melt$variable, 1, 4)
+K4me1_melt$group <- as.factor(K4me1_melt$group)
+K4me1_melt$group <- reorder.factor(K4me1_melt$group, new.order=c("WTSE","TGSE","WTEE","TGEE"))
+
+K4me1_melt$gene_mean <- K4me1_melt$mean_WTSE
+K4me1_melt[K4me1_melt$group=="WTEE","gene_mean"] <- K4me1_melt[K4me1_melt$group=="WTEE","mean_WTEE"]
+K4me1_melt[K4me1_melt$group=="TGSE","gene_mean"] <- K4me1_melt[K4me1_melt$group=="TGSE","mean_TGSE"]
+K4me1_melt[K4me1_melt$group=="TGEE","gene_mean"] <- K4me1_melt[K4me1_melt$group=="TGEE","mean_TGEE"]
+
+
+#tile with continuous H3K4me1 level, split by gene feature
+#reordering by rowmeans to make nicer visual of high/low DNAm
+K4me1_melt <- K4me1_melt[order(K4me1_melt$mean_TGSE),]
+K4me1_melt$coord <- as.factor(K4me1_melt$coord)
+K4me1_melt$coord <- reorder.factor(K4me1_melt$coord, new.order=unique(as.character(K4me1_melt$coord)))
+
+features <- as.character(unique(K4me1_melt$feature))
+limit <- max(c(abs(K4me1_melt$gene_mean), abs(counts_melt$value)))*c(-1,1)
+
+#add gene name and context
+K4me1_melt$lab <- paste(K4me1_melt$Gene, K4me1_melt$feature, sep=" | ")
+K4me1_melt$lab <- as.factor(K4me1_melt$lab)
+K4me1_melt$lab <- reorder.factor(K4me1_melt$lab, new.order=unique(as.character(K4me1_melt$lab)))
+
+#subset just to means
+nrow(K4me1_means <- K4me1_melt[,c("coord","Gene","feature","group","gene_mean","mean_TGSE","lab")]) #768
+library(dplyr)
+nrow(K4me1_means <- distinct(K4me1_means)) #192
+K4me1_means <- K4me1_means[order(K4me1_means$mean_TGSE),]
+K4me1_means$lab <- paste(K4me1_means$Gene, K4me1_means$feature, sep=" | ")
+
+labs <- unique(K4me1_means$lab)
+for (i in 1:length(labs)){
+  #print(paste(i, labs[i]))
+  anno <- K4me1_means[K4me1_means$lab%in%labs[i],]
+  if (length(unique(anno$coord))>1){
+    for (j in 1:length(unique(anno$coord))){
+      anno$lab[(j*4-3):(j*4)] <- paste(anno$lab[(j*4-3):(j*4)], j, sep=" | ")
+    }
+    K4me1_means[K4me1_means$lab%in%labs[i],] <- anno
+  }
+}
+
+K4me1_means$lab <- reorder.factor(K4me1_means$lab, new.order=unique(as.character(K4me1_means$lab)))
+#use same colour scale as defined above for mRNA
+
+  ggplot(K4me1_means, aes(x=group, y=lab, fill=gene_mean)) + geom_tile() + theme_bw() + theme(axis.title.y=element_blank(), axis.title.x=element_blank(), axis.text.x=element_text(angle=90, hjust=1), plot.title=element_text(hjust=0.5, vjust=1, size=12), plot.subtitle = element_text(hjust=0.5, size=10)) + scale_fill_distiller(palette="RdBu", direction=-1, limit=limit, name="Row\nZ-score") + labs(title="H3K4me1")
+```
+
+## Plotting mRNA expression
+
+```{r}
+#order same way as histone data
+gene_ord <- unique(K4me1_means$Gene)
+counts_melt$Gene <- reorder.factor(counts_melt$Gene, new.order=gene_ord)
+
+ggplot(counts_melt, aes(x=group, y=Gene, fill=value)) + geom_tile() + theme_bw() + theme(axis.title.y=element_blank(), axis.title.x=element_blank(), axis.text.x=element_text(angle=90, hjust=1), plot.title=element_text(hjust=0.5, vjust=1, size=12)) +  scale_fill_distiller(palette="RdBu", direction=1, limit=limit, name="Row\nZ-score") + labs(title="mRNA\nexpression")
+```
+
+## Gene ontology enrichment
+Input: genes with differential H3K4me1 & expression. Background: all genes covered by RNA-seq and H3K4me1 ChIP-seq.
+```{r}
+#convert hits to ensembl genes
+all(set21 %in% RNA_WTSE_TGSE$mgi_symbol) #TRUE
+ens_hits <- RNA_WTSE_TGSE[RNA_WTSE_TGSE$mgi_symbol %in% set21 & complete.cases(RNA_WTSE_TGSE$mgi_symbol),"ensembl"]
+all(ens_hits %in% H3K4me1_TGEE$ENSEMBL) #TRUE
+length(bg <- H3K4me1_TGEE$ENSEMBL[H3K4me1_TGEE$ENSEMBL %in% rownames(nCounts_mnc50)]) #86,359
+length(bg <- unique(bg)) #10,155 genes
+
+set21_gr <- gost(ens_hits, organism="mmusculus", significant=TRUE, user_threshold = 0.2, correction_method="fdr", domain_scope="custom_annotated", custom_bg=bg, evcodes=TRUE)$result
+unique(set21_gr$source)
+#[1] "CORUM" "GO:MF" "MIRNA"
+
+GOMF <- set21_gr[set21_gr$source=="GO:MF",] #43 GO terms, all padj = 0.19 and most with 1 intersection
+topMF <- GOMF[GOMF$intersection_size>2,]
+topMF[,c("term_name","intersection_size","recall")]
+#                                                               term_name intersection_size      recall
+#26 RNA polymerase II cis-regulatory region sequence-specific DNA binding                 5 0.009900990
+#27                   cis-regulatory region sequence-specific DNA binding                 5 0.009689922
+#28                                                         actin binding                 4 0.013937282
+#33                                          structural molecule activity                 4 0.012307692
+#37                                                       protein binding                29 0.004876408
+#39                                          cytoskeletal protein binding                 6 0.009063444
+
+#getting genes
+topMF$intersection_mgi <- sapply(1:nrow(topMF), function(x){
+  ensgenes <- unlist(strsplit(topMF$intersection[x], split=","))
+  return(RNA_WTSE_TGSE[RNA_WTSE_TGSE$ensembl %in% ensgenes & complete.cases(RNA_WTSE_TGSE$mgi_symbol),"mgi_symbol"])
+  })
+
+topMF[topMF$intersection_size<7,c("term_name","intersection_mgi")]
+#                                                               term_name
+#26 RNA polymerase II cis-regulatory region sequence-specific DNA binding
+#27                   cis-regulatory region sequence-specific DNA binding
+#28                                                         actin binding
+#33                                          structural molecule activity
+#39                                          cytoskeletal protein binding
+#                               intersection_mgi
+#26             Glis2, Etv4, Per1, Hivep1, Zfhx2
+#27             Glis2, Etv4, Per1, Hivep1, Zfhx2
+#28                Coro2a, Arpc1b, Plekhh2, Tns1
+#33                  Arpc1b, Mfge8, Tnxb, Cldn11
+#39 Trak2, Coro2a, Arpc1b, Stard9, Plekhh2, Tns1
+
+topMF[topMF$intersection_size>7,c("term_name","intersection_mgi")]
+#         term_name
+#37 protein binding
+#                                                                                                       #                                                                                                       #      intersection_mgi
+#37 Glis2, Per1, Lrch3, Rps6ka2, Trak2, 2810459M11Rik, Coro2a, Arpc1b, Ppp1r35, Mfge8, Tsc22d3, Slc27a1, Slc16a1, Tnxb, Stard9, Neurl1b, Cldn11, Srrm2, Lgi2, Plekhh2, Cables1, Fat4, Nwd1, Fzd2, Ppp1r3g, Acvr2a, Tns1, Rnf169, Heg1
+```
+29/37 genes (78%) are annotated to "protein binding." 5 genes (14%) are also related to cis-regulatory region binding, suggesting a role in transcription regulation (Glis2, Etv4, Per1, Hivep1, Zfhx2).
+
+# Making a table of differentially bound and expressed genes
+```{r}
+RNA_sub <- RNA_WTSE_TGSE[RNA_WTSE_TGSE$mgi_symbol %in% set21,]
+nrow(RNA_sub) #37
+
+H3K4me1_sub <- H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$SYMBOL %in% set21 & H3K4me1_WTSE_TGSE$FDR<=0.05 & abs(H3K4me1_WTSE_TGSE$Fold)>=0.5,]
+nrow(H3K4me1_sub) #48
+
+write.csv(RNA_sub, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/8-multi_omic_integration/overlap/SE_DEGs_H3K4me1/set21_mRNA_stats.csv", row.names=FALSE)
+write.csv(H3K4me1_sub, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/8-multi_omic_integration/overlap/SE_DEGs_H3K4me1/set21_H3K4me1_stats.csv", row.names=FALSE)
+```
+
+# Plotting H3K4me1 at Per1
+For a representative example.
+
+```{r Per1 plot, eval=F}
+################## H3K4me1
+
+######## check stats for differential H3K4me1
+WTSE_TGSE_H3K4me1 <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_sig_only/H3K4me1/H3K4me1_WTSE-TGSE_cons-2_FDR0_05_FC0_5_annot.tsv")
+WTSE_TGSE_H3K4me1[grep("Per1", WTSE_TGSE_H3K4me1$SYMBOL),c("chr","start","end","Fold", "FDR")]
+#       chr    start      end  Fold    FDR
+#3423 chr11 69093767 69094562 -1.28 0.0339
+
+#none for WTSE-WTEE, TGSE-TGEE
+
+WTEE_TGEE_H3K4me1 <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_sig_only/H3K4me1/H3K4me1_WTEE-TGEE_cons-2_FDR0_05_FC0_5_annot.tsv")
+WTEE_TGEE_H3K4me1[grep("Per1", WTEE_TGEE_H3K4me1$SYMBOL),c("chr","start","end","Fold", "FDR")]
+#none
+
+######## 
+
+subbed_fdat_K4me1 <- H3K4me1_anno[H3K4me1_anno$seqnames=="chr11" & H3K4me1_anno$end>=69094562-5000 & H3K4me1_anno$start<=69093767+5000,] #3 peaks
+subbed_fdat_K4me1[,c("coord","annotation")]
+#                         coord      annotation
+#3715  chr11: 69093766-69094562 Active Promoter
+#27307 chr11: 69096751-69099442 Active Promoter
+#36454 chr11: 69089325-69093160 Active Promoter
+
+# Chromosome Track
+Per1_itrack <- IdeogramTrack(genome = "mm10", chromosome = "chr11")
+# Basepair map track
+Per1_gtrack <- GenomeAxisTrack(add53 = TRUE, add35 = TRUE, labelPos = "alternating")
+
+#intron/exon track
+#UCSC coords chr11:69098948-69109960
+knownGenes <- UcscTrack(genome = "mm10", chromosome = "chr11", 
+                        track = "knownGene", from = 69093767, to = 69109960,
+                        trackType = "GeneRegionTrack", 
+                        rstarts = "exonStarts", rends = "exonEnds", 
+                        gene = "name", symbol = "name", 
+                        transcript = "name", strand = "strand", 
+                        fill = "grey", name = "UCSC Genes")
+
+#### H3K4me1 tracks
+bw_H3K4me1_WTSE <- import.bw("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/bigwig/H3K4me1/merged_c_WTSE.bw", as="GRanges")
+bw_H3K4me1_WTEE <- import.bw("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/bigwig/H3K4me1/merged_c_WTEE.bw", as="GRanges")
+bw_H3K4me1_TGSE <- import.bw("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/bigwig/H3K4me1/merged_c_TGSE.bw", as="GRanges")
+bw_H3K4me1_TGEE <- import.bw("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/bigwig/H3K4me1/merged_c_TGEE.bw", as="GRanges")
+
+#making trakcs
+#optional argument: ylim=c(min,max)
+H3K4me1_WTSE_track <- DataTrack(range=bw_H3K4me1_WTSE,
+                         chromosome="chr11",
+                         from =69093767,
+                         to=69109960,
+                         fill="black",col.histogram="black",
+                         name="H3K4me1 WTSE",
+                         type="histogram", ylim=c(0,25),alpha=0.8)
+H3K4me1_WTEE_track <- DataTrack(range=bw_H3K4me1_WTEE,
+                         chromosome="chr11",
+                         from =69093767,
+                         to=69109960,
+                         fill="grey60",col.histogram="grey60",
+                         name="H3K4me1 WTEE",
+                         type="histogram", ylim=c(0,25),alpha=0.8)
+H3K4me1_TGSE_track <- DataTrack(range=bw_H3K4me1_TGSE,
+                         chromosome="chr11",
+                         from =69093767,
+                         to=69109960,
+                         fill="plum3",col.histogram="plum3",
+                         name="H3K4me1 TGSE",
+                         type="histogram", ylim=c(0,25),alpha=0.8)
+H3K4me1_TGEE_track <- DataTrack(range=bw_H3K4me1_TGEE,
+                         chromosome="chr11",
+                         from =69093767,
+                         to=69109960,
+                         fill="palegreen3",col.histogram="palegreen3",
+                         name="H3K4me1 TGEE",
+                         type="histogram", ylim=c(0,25),alpha=0.8)
+
+#plotting - overlaid
+H3K4me1_overlay_all <- OverlayTrack(trackList=list(H3K4me1_WTSE_track, H3K4me1_TGSE_track, H3K4me1_WTEE_track, H3K4me1_TGEE_track))
+H3K4me1_overlay_SE <- OverlayTrack(trackList=list(H3K4me1_WTSE_track, H3K4me1_TGSE_track))
+H3K4me1_overlay_EE <- OverlayTrack(trackList=list(H3K4me1_WTEE_track, H3K4me1_TGEE_track))
+
+#plotting everything
+plotTracks(list(Per1_itrack, Per1_gtrack, knownGenes, H3K4me1_overlay_SE, H3K4me1_overlay_EE), from = 69093767, to = 69109960, sizes = c(0.05,0.1,0.05,0.1,0.1), col.axis="black", background.title="white")
+
+#zoomed in
+#chr11 69093767-69094562
+plotTracks(list(Per1_itrack, Per1_gtrack, knownGenes, H3K4me1_overlay_SE, H3K4me1_overlay_EE), from = 69093767, to = 69094562, sizes = c(0.05,0.1,0.05,0.1,0.1), col.axis="black", background.title="white")
+```
+
+---

@@ -1,0 +1,324 @@
+## Plotting H3K27ac, H3K4me1, and DNAhm at Ssbp3
+### Samantha Schaffner
+### Feb 27, 2023
+
+## Libraries
+```{r}
+.libPaths(c(.libPaths(), "/mnt/scratch/KoborLab/R_Libs/4.2", "/mnt/scratch/KoborLab/Personal_Folders/sschaffner/Rstudio/R/x86_64-pc-linux-gnu-library/4.0/"))
+library(lifecycle, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(scales, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(vctrs, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+
+library(reshape2)
+library(ggplot2)
+library(DescTools)
+library(readxl)
+library(BiSeq)
+library(gridExtra)
+library(Gviz)
+library(plyr)
+library(rtracklayer)
+library(GenomicRanges)
+library(gplots)
+library(RColorBrewer)
+library(gprofiler2)
+```
+
+# Retrieving coordinates for differential H3K4me1 at SSbp3
+
+```{r Ssbp3 plot, eval=F}
+################## H3K4me1
+
+######## check stats for differential H3K4me1
+WTSE_TGSE_H3K4me1 <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_sig_only/H3K4me1/H3K4me1_WTSE-TGSE_cons-2_FDR0_05_FC0_5_annot.tsv")
+WTSE_TGSE_H3K4me1[grep("Ssbp3", WTSE_TGSE_H3K4me1$SYMBOL),c("chr","start","end","annotation","Fold", "FDR")]
+#      chr     start       end                                         annotation Fold     FDR
+#1076 chr4 106992158 106993541 Intron (ENSMUST00000150915.7/72475, intron 4 of 8) 1.02 0.00749
+
+#none for WTSE-WTEE, TGSE-TGEE
+
+WTEE_TGEE_H3K4me1 <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_sig_only/H3K4me1/H3K4me1_WTEE-TGEE_cons-2_FDR0_05_FC0_5_annot.tsv")
+WTEE_TGEE_H3K4me1[grep("Ssbp3", WTEE_TGEE_H3K4me1$SYMBOL),c("chr","start","end","annotation","Fold", "FDR")]
+#      chr     start       end       annotation  Fold    FDR
+#2226 chr4 107048684 107049510 Promoter (1-2kb) -0.96 0.0162
+
+######## plot promoter region with differential H3K4me1 in EE
+
+H3K4me1_anno <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_conspeaks_annotated.csv")
+H3K4me1_anno$annotation <- as.factor(H3K4me1_anno$annotation)
+H3K4me1_anno$annotation <- reorder.factor(H3K4me1_anno$annotation, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter", "5' UTR", "Exon", "Intron", "3' UTR", "Downstream", "Distal Intergenic"))
+subbed_fdat_K4me1 <- H3K4me1_anno[H3K4me1_anno$seqnames=="chr4" & H3K4me1_anno$end>=107049510-5000 & H3K4me1_anno$start<=107048684+5000,] #5 peaks
+subbed_fdat_K4me1[,c("coord","annotation")]
+#                          coord      annotation
+#16372 chr4: 107048683-107049510 Active Enhancer
+#28260 chr4: 107051788-107053842 Active Enhancer
+#59386 chr4: 107050891-107051466 Active Promoter
+#70157 chr4: 107047521-107048143        Promoter
+#79616 chr4: 107045261-107045758 Active Enhancer
+
+subbed_fdat_K4me1 <- H3K4me1_anno[H3K4me1_anno$seqnames=="chr4" & H3K4me1_anno$end>=107049510 & H3K4me1_anno$start<=107048684,] #1 peak
+subbed_fdat_K4me1[,c("coord","annotation")]
+#                          coord      annotation
+#16372 chr4: 107048683-107049510 Active Enhancer
+```
+
+# Retrieving coordinates for differential H3K27ac at SSbp3
+
+```{r Ssbp3 plot, eval=F}
+################## H3K27ac
+
+######## check stats for differential H3K27ac
+WTSE_TGSE_H3K27ac <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_sig_only/H3K27ac/H3K27ac_WTSE-TGSE_cons-2_FDR0_05_FC0_5_annot.tsv")
+WTSE_TGSE_H3K27ac[grep("Ssbp3", WTSE_TGSE_H3K27ac$SYMBOL),c("chr","start","end","annotation","Fold", "FDR")]
+#     chr     start       end                                         annotation  Fold    FDR
+#557 chr4 107006888 107007506 Intron (ENSMUST00000150915.7/72475, intron 4 of 8) -2.17 0.0243
+
+WTEE_TGEE_H3K27ac <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_sig_only/H3K27ac/H3K27ac_WTEE-TGEE_cons-2_FDR0_05_FC0_5_annot.tsv")
+WTEE_TGEE_H3K27ac[grep("Ssbp3", WTEE_TGEE_H3K27ac$SYMBOL),c("chr","start","end","annotation","Fold", "FDR")]
+#     chr     start       end                                         annotation Fold    FDR
+#332 chr4 107006888 107007506 Intron (ENSMUST00000150915.7/72475, intron 4 of 8) -2.8 0.0148
+
+######## plot intron region with differential H3K27ac in SE and EE
+
+H3K27ac_anno <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/H3K27ac_conspeaks_annotated.csv")
+H3K27ac_anno$annotation <- as.factor(H3K27ac_anno$annotation)
+H3K27ac_anno$annotation <- reorder.factor(H3K27ac_anno$annotation, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter", "5' UTR", "Exon", "Intron", "3' UTR", "Downstream", "Distal Intergenic"))
+subbed_fdat_K27ac <- H3K27ac_anno[H3K27ac_anno$seqnames=="chr4" & H3K27ac_anno$end>=107006888-5000 & H3K27ac_anno$start<=107007506+5000,] #5 peaks
+subbed_fdat_K27ac[,c("coord","annotation")]
+#                          coord      annotation
+#565   chr4: 107006887-107007506 Active Enhancer
+#8877  chr4: 107009261-107010867 Active Enhancer
+#12258 chr4: 107000698-107005168 Active Enhancer
+#46219 chr4: 107011795-107013072 Active Enhancer
+#48930 chr4: 107005709-107006544 Active Enhancer
+
+subbed_fdat_K27ac <- H3K27ac_anno[H3K27ac_anno$seqnames=="chr4" & H3K27ac_anno$end>=107006888 & H3K27ac_anno$start<=107007506,] #1 peak
+subbed_fdat_K27ac[,c("coord","annotation")]
+#                        coord      annotation
+#565 chr4: 107006887-107007506 Active Enhancer
+```
+
+# Retrieving coordinates for differential DNAhm at SSbp3
+```{r}
+################## DNAhm
+
+######## check stats for differential DNAhm
+WTSE_TGSE_DNAhm <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/hydroxy/WTSE_TGSE/linear_model/auto/CpG/lm_WTSE_TGSE.csv")
+WTSE_TGSE_DNAhm[WTSE_TGSE_DNAhm$gene %in% "Ssbp3",c("site","DB","adjP","genomic_anno","cgi_anno")]
+#                site           DB      adjP     genomic_anno       cgi_anno
+#12287 chr4.107009545 -0.009411489 0.9869256 enhancers_active mm10_cpg_inter
+
+WTEE_TGEE_DNAhm <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/hydroxy/WTEE_TGEE/linear_model/auto/CpG/lm_WTEE_TGEE.csv")
+WTEE_TGEE_DNAhm[WTEE_TGEE_DNAhm$gene %in% "Ssbp3",c("site","DB","adjP","genomic_anno","cgi_anno")]
+#                site         DB      adjP     genomic_anno       cgi_anno
+#12287 chr4.107009545 -0.2369168 0.1452778 enhancers_active mm10_cpg_inter
+
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/all_EE_hmC_betas_CpG_10X_auto_var_noout.RData")
+fdat_hmC <- data.frame(site=rownames(betas_variable), chr=sapply(1:nrow(betas_variable), function(x){ unlist(strsplit(rownames(betas_variable)[x], split="\\."))[1]}), pos=sapply(1:nrow(betas_variable), function(x){ as.integer(unlist(strsplit(rownames(betas_variable)[x], split="\\."))[2])}))
+
+#UCSC mm10 coords for Ssbp3
+#chr4:106911470-107049694
+
+subbed_fdat_hmC <- fdat_hmC[fdat_hmC$chr=="chr4" & fdat_hmC$pos>=106911470-5000 & fdat_hmC$pos<=107049694+5000,] #4 sites
+subbed_fdat_hmC
+#                site  chr       pos
+#12284 chr4.106954958 chr4 106954958
+#12285 chr4.106954981 chr4 106954981
+#12286 chr4.106955002 chr4 106955002
+#12287 chr4.107009545 chr4 107009545
+
+anno <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/cpg_anno_hmC_ChIP.txt", sep="\t")
+anno[anno$gene%in%"Ssbp3",]
+#                 site  gene                 tx     genomic_anno       cgi_anno
+#12287 chr4: 107009545 Ssbp3 ENSMUST00000030367 enhancers_active mm10_cpg_inter
+
+anno[anno$site %in% paste(subbed_fdat_hmC$chr, subbed_fdat_hmC$pos, sep=": "),]
+#                 site  gene                 tx     genomic_anno       cgi_anno
+#12284 chr4: 106954958  <NA>               <NA> enhancers_active mm10_cpg_inter
+#12285 chr4: 106954981  <NA>               <NA> enhancers_active mm10_cpg_inter
+#12286 chr4: 106955002  <NA>               <NA> enhancers_active mm10_cpg_inter
+#12287 chr4: 107009545 Ssbp3 ENSMUST00000030367 enhancers_active mm10_cpg_inter
+```
+
+# Getting coordinates that cover changes in H3K4me1, H3K27ac, and DNAhm
+```{r}
+head(subbed_fdat_K4me1)
+head(subbed_fdat_K27ac)
+head(subbed_fdat_hmC)
+
+min <- min(c(subbed_fdat_K4me1$start, subbed_fdat_K27ac$start, subbed_fdat_hmC$pos)) #106954958
+max <- max(c(subbed_fdat_K4me1$end, subbed_fdat_K27ac$end, subbed_fdat_hmC$pos)) #107049510
+```
+
+# Ssbp3 multi-omic plot
+```{r}
+# Chromosome Track
+Ssbp3_itrack <- IdeogramTrack(genome = "mm10", chromosome = "chr4")
+# Basepair map track
+Ssbp3_gtrack <- GenomeAxisTrack(add53 = TRUE, add35 = TRUE, labelPos = "alternating")
+
+#intron/exon track
+#UCSC coords chr11:69098948-69109960
+knownGenes <- UcscTrack(genome = "mm10", chromosome = "chr4", 
+                        track = "knownGene", from = min-1000, to = max+1000,
+                        trackType = "GeneRegionTrack", 
+                        rstarts = "exonStarts", rends = "exonEnds", 
+                        gene = "name", symbol = "name", 
+                        transcript = "name", strand = "strand", 
+                        fill = "grey", name = "UCSC Genes")
+
+#### H3K4me1 tracks
+bw_H3K4me1_WTSE <- import.bw("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/bigwig/H3K4me1/merged_c_WTSE.bw", as="GRanges")
+bw_H3K4me1_WTEE <- import.bw("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/bigwig/H3K4me1/merged_c_WTEE.bw", as="GRanges")
+bw_H3K4me1_TGSE <- import.bw("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/bigwig/H3K4me1/merged_c_TGSE.bw", as="GRanges")
+bw_H3K4me1_TGEE <- import.bw("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/bigwig/H3K4me1/merged_c_TGEE.bw", as="GRanges")
+
+#making trakcs
+#optional argument: ylim=c(min,max)
+H3K4me1_WTSE_track <- DataTrack(range=bw_H3K4me1_WTSE,
+                         chromosome="chr4",
+                         from =min-1000,
+                         to=max+1000,
+                         fill="black",col.histogram="black",
+                         name="H3K4me1 WTSE",
+                         type="histogram", alpha=0.8, ylim=c(0,30))
+H3K4me1_WTEE_track <- DataTrack(range=bw_H3K4me1_WTEE,
+                         chromosome="chr4",
+                         from =min-1000,
+                         to=max+1000,
+                         fill="grey60",col.histogram="grey60",
+                         name="H3K4me1 WTEE",
+                         type="histogram", alpha=0.8, ylim=c(0,30))
+H3K4me1_TGSE_track <- DataTrack(range=bw_H3K4me1_TGSE,
+                         chromosome="chr4",
+                         from =min-1000,
+                         to=max+1000,
+                         fill="plum3",col.histogram="plum3",
+                         name="H3K4me1 TGSE",
+                         type="histogram", alpha=0.8, ylim=c(0,30))
+H3K4me1_TGEE_track <- DataTrack(range=bw_H3K4me1_TGEE,
+                         chromosome="chr4",
+                         from =min-1000,
+                         to=max+1000,
+                         fill="palegreen3",col.histogram="palegreen3",
+                         name="H3K4me1 TGEE",
+                         type="histogram", alpha=0.8, ylim=c(0,30))
+
+#plotting - overlaid
+H3K4me1_overlay_all <- OverlayTrack(trackList=list(H3K4me1_WTSE_track, H3K4me1_TGSE_track, H3K4me1_WTEE_track, H3K4me1_TGEE_track))
+H3K4me1_overlay_SE <- OverlayTrack(trackList=list(H3K4me1_WTSE_track, H3K4me1_TGSE_track))
+H3K4me1_overlay_EE <- OverlayTrack(trackList=list(H3K4me1_WTEE_track, H3K4me1_TGEE_track))
+
+#### H3K27ac tracks
+bw_H3K27ac_WTSE <- import.bw("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/bigwig/H3K27ac/merged_b_WTSE.bw", as="GRanges")
+bw_H3K27ac_WTEE <- import.bw("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/bigwig/H3K27ac/merged_b_WTEE.bw", as="GRanges")
+bw_H3K27ac_TGSE <- import.bw("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/bigwig/H3K27ac/merged_b_TGSE.bw", as="GRanges")
+bw_H3K27ac_TGEE <- import.bw("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/bigwig/H3K27ac/merged_b_TGEE.bw", as="GRanges")
+
+#making trakcs
+#optional argument: ylim=c(min,max)
+H3K27ac_WTSE_track <- DataTrack(range=bw_H3K27ac_WTSE,
+                         chromosome="chr4",
+                         from =min-1000,
+                         to=max+1000,
+                         fill="black",col.histogram="black",
+                         name="H3K27ac WTSE",
+                         type="histogram",alpha=0.8, ylim=c(0,30))
+H3K27ac_WTEE_track <- DataTrack(range=bw_H3K27ac_WTEE,
+                         chromosome="chr4",
+                         from =min-1000,
+                         to=max+1000,
+                         fill="grey60",col.histogram="grey60",
+                         name="H3K27ac WTEE",
+                         type="histogram",alpha=0.8, ylim=c(0,30))
+H3K27ac_TGSE_track <- DataTrack(range=bw_H3K27ac_TGSE,
+                         chromosome="chr4",
+                         from =min-1000,
+                         to=max+1000,
+                         fill="plum3",col.histogram="plum3",
+                         name="H3K27ac TGSE",
+                         type="histogram",alpha=0.8, ylim=c(0,30))
+H3K27ac_TGEE_track <- DataTrack(range=bw_H3K27ac_TGEE,
+                         chromosome="chr4",
+                         from =min-1000,
+                         to=max+1000,
+                         fill="palegreen3",col.histogram="palegreen3",
+                         name="H3K27ac TGEE",
+                         type="histogram",alpha=0.8, ylim=c(0,30))
+
+#plotting - overlaid
+H3K27ac_overlay_all <- OverlayTrack(trackList=list(H3K27ac_WTSE_track, H3K27ac_TGSE_track, H3K27ac_WTEE_track, H3K27ac_TGEE_track))
+H3K27ac_overlay_SE <- OverlayTrack(trackList=list(H3K27ac_WTSE_track, H3K27ac_TGSE_track))
+H3K27ac_overlay_EE <- OverlayTrack(trackList=list(H3K27ac_WTEE_track, H3K27ac_TGEE_track))
+
+### DNAhm tracks
+betas.hmC <- as.data.frame(t(as.matrix(betas_variable[rownames(betas_variable) %in% subbed_fdat_hmC$site,])))
+betas.hmC$Group <- substr(rownames(betas.hmC), start=1, stop=4)
+
+betas.hmC.WTSE <- betas.hmC[betas.hmC$Group == "WTSE",]
+betas.hmC.WTSE <- betas.hmC.WTSE[complete.cases(betas.hmC.WTSE),]
+betas.hmC.WTSE$Group <- NULL
+betas.hmC.WTSE <- as.data.frame(t(betas.hmC.WTSE))
+betas.hmC.WTSE$symbol <- rownames(betas.hmC.WTSE)
+
+betas.hmC.WTEE <- betas.hmC[betas.hmC$Group == "WTEE",]
+betas.hmC.WTEE <- betas.hmC.WTEE[complete.cases(betas.hmC.WTEE),]
+betas.hmC.WTEE$Group <- NULL
+betas.hmC.WTEE <- as.data.frame(t(betas.hmC.WTEE))
+betas.hmC.WTEE$symbol <- rownames(betas.hmC.WTEE)
+
+betas.hmC.TGSE <- betas.hmC[betas.hmC$Group == "TGSE",]
+betas.hmC.TGSE <- betas.hmC.TGSE[complete.cases(betas.hmC.TGSE),]
+betas.hmC.TGSE$Group <- NULL
+betas.hmC.TGSE <- as.data.frame(t(betas.hmC.TGSE))
+betas.hmC.TGSE$symbol <- rownames(betas.hmC.TGSE)
+
+betas.hmC.TGEE <- betas.hmC[betas.hmC$Group == "TGEE",]
+betas.hmC.TGEE <- betas.hmC.TGEE[complete.cases(betas.hmC.TGEE),]
+betas.hmC.TGEE$Group <- NULL
+betas.hmC.TGEE <- as.data.frame(t(betas.hmC.TGEE))
+betas.hmC.TGEE$symbol <- rownames(betas.hmC.TGEE)
+
+Group_betas_hmC <- join(betas.hmC.WTSE, betas.hmC.WTEE)
+Group_betas_hmC <- join(Group_betas_hmC, betas.hmC.TGSE)
+Group_betas_hmC <- join(Group_betas_hmC, betas.hmC.TGEE)
+rownames(Group_betas_hmC) <- Group_betas_hmC$symbol
+Ssbp3_fdat <- subbed_fdat_hmC
+colnames(Ssbp3_fdat)[1] <- "symbol"
+Ssbp3_fdat$genome <- "mm10"
+Group_betas_hmC <- join(Group_betas_hmC, Ssbp3_fdat)
+rownames(Group_betas_hmC) <- Group_betas_hmC$symbol
+colnames(Group_betas_hmC)
+Group_betas_hmC <- Group_betas_hmC[, c(5, 15:17, 1:4, 6:14)]
+colnames(Group_betas_hmC)
+
+#hmC track: points
+Ssbp3_dTrack_hmC_pt <- DataTrack(data = Group_betas_hmC[,c(5:8,12:14,9:11,15:17)], name = "DNAhm beta Value", start = Group_betas_hmC$pos, width = 1, chromosome = unique(as.character(Group_betas_hmC$chr)), genome = unique(Group_betas_hmC$genome), groups = rep(c("WTSE", "TGSE", "WTEE","TGEE"), c(4,3,3,3)), type = c("a","p"), col=c("black", "plum3", "grey60","palegreen3"), jitter.x=T, amount=10, cex = 1, alpha =1, cex.legend = 1)
+
+#hmC track: boxplot
+Ssbp3_dTrack_hmC_box <- DataTrack(data = Group_betas_hmC[,c(5:8,12:14,9:11,15:17)], name = "DNAhm beta Value", start = Group_betas_hmC$pos, width = 1, chromosome = unique(as.character(Group_betas_hmC$chr)), genome = unique(Group_betas_hmC$genome), groups = rep(c("WTSE", "TGSE", "WTEE","TGEE"), c(4,3,3,3)), type = c("boxplot","a"), col=c("black", "plum3", "grey60","palegreen3"), col.boxplotFrame="transparent",box.width = 4, box.ratio=0.8, cex.legend = 1, ylim=c(0,1))
+
+
+#plotting everything
+plotTracks(list(Ssbp3_itrack, Ssbp3_gtrack, knownGenes, H3K4me1_overlay_SE, H3K4me1_overlay_EE, H3K27ac_overlay_SE, H3K27ac_overlay_EE, Ssbp3_dTrack_hmC_box), from = min-1000, to = max+1000, sizes = c(0.02,0.1,0.05,0.05,0.05,0.05,0.05,0.1), col.axis="black", background.title="white")
+
+#whole gene coords
+#chr4:106911470-107049694
+plotTracks(list(Ssbp3_itrack, Ssbp3_gtrack, knownGenes, H3K4me1_overlay_SE, H3K4me1_overlay_EE, H3K27ac_overlay_SE, H3K27ac_overlay_EE, Ssbp3_dTrack_hmC_box), from = 106911470, to = 107049694, sizes = c(0.02,0.1,0.05,0.05,0.05,0.05,0.05,0.1), col.axis="black", background.title="white")
+
+#zoomed in
+#differential H3K4me1 - chr4: 107048683-107049510 (active enhancer, also marked w/K27ac in all groups)
+#differential H3K27ac - chr4: 107006887-107007506 (active enhancer in WTSE, marked w/K4me1 and K27ac)
+#differential DNAhm - chr4: 107009545 (active enhancer)
+
+#chr4: 107048683-107049510
+plotTracks(list(Ssbp3_itrack, Ssbp3_gtrack, knownGenes, H3K4me1_overlay_SE, H3K4me1_overlay_EE, H3K27ac_overlay_SE, H3K27ac_overlay_EE, Ssbp3_dTrack_hmC_pt), from = 107048683, to = 107049510, sizes = c(0.02,0.1,0.05,0.05,0.05,0.05,0.05,0.1), col.axis="black", background.title="white")
+
+#chr4: 107006887-107007506
+plotTracks(list(Ssbp3_itrack, Ssbp3_gtrack, knownGenes, H3K4me1_overlay_SE, H3K4me1_overlay_EE, H3K27ac_overlay_SE, H3K27ac_overlay_EE, Ssbp3_dTrack_hmC_pt), from = 107006887, to = 107007506, sizes = c(0.02,0.1,0.05,0.05,0.05,0.05,0.05,0.1), col.axis="black", background.title="white")
+
+#chr4: 107009545
+plotTracks(list(Ssbp3_itrack, Ssbp3_gtrack, knownGenes, H3K4me1_overlay_SE, H3K4me1_overlay_EE, H3K27ac_overlay_SE, H3K27ac_overlay_EE, Ssbp3_dTrack_hmC_box), from = 107009545-100, to = 107009545+100, sizes = c(0.02,0.1,0.05,0.05,0.05,0.05,0.05,0.1), col.axis="black", background.title="white")
+```
+
+---
