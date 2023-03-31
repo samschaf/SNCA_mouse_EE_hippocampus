@@ -1,0 +1,2094 @@
+# Characterizing peaks with H3K4me1 loss by gene feature
+### Samantha Schaffner
+### Feb 10, 2022
+
+##Permutation testing code for genomic enrichment: mouse mm10 version
+Adapted from Rachel Edgar. Updated by Samantha Schaffner.
+
+
+##Libraries
+```{r library, eval=F}
+#library(annotatr)
+library(dplyr)
+library(ggplot2)
+library(gtools)
+#library(biomaRt)
+library(gplots)
+library(RColorBrewer)
+library(gtools)
+library(DescTools)
+library(reshape2)
+library(GenomicRanges)
+```
+
+
+##Permutation test
+```{r}
+#First, read in background annotation data frame with all of the sites you tested for differential H3K4me1 and their gene contexts (NOT K4me1 island contexts)
+#This should be named "Gene_K4me1_Relations"
+
+Gene_K4me1_Relations <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_WTSE-TGSE_anno.csv")
+Gene_K4me1_Relations <- Gene_K4me1_Relations[,c("seqnames","start","end","coord","annotation")]
+#remove transcript details from annotation
+Gene_K4me1_Relations$annotation[grep("Intron", Gene_K4me1_Relations$annotation)] <- "Intron"
+Gene_K4me1_Relations$annotation[grep("Exon", Gene_K4me1_Relations$annotation)] <- "Exon"
+Gene_K4me1_Relations$annotation[grep("Promoter", Gene_K4me1_Relations$annotation)] <- "Promoter"
+Gene_K4me1_Relations$annotation[grep("Downstream", Gene_K4me1_Relations$annotation)] <- "Downstream"
+unique(Gene_K4me1_Relations$annotation)
+#[1] "Promoter"          "Intron"            "Distal Intergenic" "Exon"             
+#[5] "5' UTR"            "3' UTR"            "Downstream" 
+
+#adding in custom annotations for active promoters, active/poised enhancers
+#over-write existing annotations if overlapping
+Gene_K4me1_gr <- GRanges(seqnames=Gene_K4me1_Relations$seqnames, ranges=IRanges(start=Gene_K4me1_Relations$start, end=Gene_K4me1_Relations$end))
+
+#promoters
+promoters <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/consensus_peaks/promoters.txt", sep="\t")
+promoters_gr <- GRanges(seqnames=promoters$seqnames, ranges=IRanges(start=promoters$start, end=promoters$end))
+Gene_K4me1_promoters <- subsetByOverlaps(Gene_K4me1_gr, promoters_gr)
+nrow(Gene_K4me1_promoters <- as.data.frame(Gene_K4me1_promoters)) #17,473 peaks
+Gene_K4me1_promoters$coord <- paste(Gene_K4me1_promoters$seqnames, paste(Gene_K4me1_promoters$start, Gene_K4me1_promoters$end, sep="-"), sep=": ")
+Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% Gene_K4me1_promoters$coord,"annotation"] <- "Active Promoter"
+
+#poised enhancers
+enpoised <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/consensus_peaks/enhancers_poised.txt", sep="\t")
+enpoised_gr <- GRanges(seqnames=enpoised$seqnames, ranges=IRanges(start=enpoised$start, end=enpoised$end))
+Gene_K4me1_enpoised <- subsetByOverlaps(Gene_K4me1_gr, enpoised_gr)
+nrow(Gene_K4me1_enpoised <- as.data.frame(Gene_K4me1_enpoised)) #9,806 peaks
+Gene_K4me1_enpoised$coord <- paste(Gene_K4me1_enpoised$seqnames, paste(Gene_K4me1_enpoised$start, Gene_K4me1_enpoised$end, sep="-"), sep=": ")
+Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% Gene_K4me1_enpoised$coord,"annotation"] <- "Poised Enhancer"
+
+#active enhancers
+enactive <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/consensus_peaks/enhancers_active.txt", sep="\t")
+enactive_gr <- GRanges(seqnames=enactive$seqnames, ranges=IRanges(start=enactive$start, end=enactive$end))
+Gene_K4me1_enactive <- subsetByOverlaps(Gene_K4me1_gr, enactive_gr)
+nrow(Gene_K4me1_enactive <- as.data.frame(Gene_K4me1_enactive)) #22,589 peaks
+Gene_K4me1_enactive$coord <- paste(Gene_K4me1_enactive$seqnames, paste(Gene_K4me1_enactive$start, Gene_K4me1_enactive$end, sep="-"), sep=": ")
+Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% Gene_K4me1_enactive$coord,"annotation"] <- "Active Enhancer"
+
+summary(as.factor(Gene_K4me1_Relations$annotation))
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter 
+#             2336               384             22589             16310 
+#Distal Intergenic        Downstream              Exon            Intron 
+#            14932               699              5500             35933 
+#  Poised Enhancer          Promoter 
+#             9806             11902 
+
+##### Permutation P value and fold change plot
+source('/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/K4me1_Gene_permutation_enrichment.R')
+
+#running the permutation: specify inputs
+H3K4me1_WTSE_TGSE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_WTSE-TGSE_anno.csv")
+#removing Gulp1 (SNCA integration site)
+H3K4me1_WTSE_TGSE <- H3K4me1_WTSE_TGSE[-which(H3K4me1_WTSE_TGSE$FDR==min(H3K4me1_WTSE_TGSE$FDR)),]
+
+peak_list <- H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$FDR<=0.05 & abs(H3K4me1_WTSE_TGSE$Fold)>=0.5,"coord"] #4,641 differentially bound peaks
+#this should be a vector of all of the peaks that were hits in your data (passing p-value and effect size thresholds). Ensure the peaks are written in the same format as they are in your background annotation file so they will match up
+
+background.peaks <- H3K4me1_WTSE_TGSE$coord
+permutation_number=1000 #typically 1000 or 10000 permutations are performed
+K4me1_Gene_permutation_enrichment(peak_list, background.peaks, permutation_number)
+
+#Without custom annotations:
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0.126; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0.182; Feature: Promoter"
+
+#trend toward enrichment for introns and depletion for promoters
+
+#With custom annotations:
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0.06; Feature: Active Promoter"
+#[1] "Enrichment: 0; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 0.77; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 0.04; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0; Feature: Poised Enhancer"
+#[1] "Enrichment: 0.08; Depletion 1; Feature: Promoter"
+
+#depletion from active promoters (almost significant), active enhancers, and poised enhancers
+#enrichment in distal intergenic, exon, intron
+
+##Peaks only differentially bound in SE ("rescue") - H3K4me1 loss
+H3K4me1_WTEE_TGEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_WTEE-TGEE_anno.csv")
+#removing Gulp1 (SNCA integration site)
+H3K4me1_WTEE_TGEE <- H3K4me1_WTEE_TGEE[-which(H3K4me1_WTEE_TGEE$FDR==min(H3K4me1_WTEE_TGEE$FDR)),]
+
+EE_peaks <- H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$FDR<=0.05 & abs(H3K4me1_WTEE_TGEE$Fold)>=0.5,"coord"] #5,003 differentially bound peaks
+EE_peaks_down <- H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$FDR<=0.05 & H3K4me1_WTEE_TGEE$Fold<=-0.5,"coord"] #3,346 peaks
+EE_peaks_up <- H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$FDR<=0.05 & H3K4me1_WTEE_TGEE$Fold>=0.5,"coord"] #1,657 peaks
+
+SE_peaks <- peak_list #4,641 differentially bound peaks
+SE_peaks_down <- H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$FDR<=0.05 & H3K4me1_WTSE_TGSE$Fold<=-0.5,"coord"] #3,879 peaks
+SE_peaks_up <- H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$FDR<=0.05 & H3K4me1_WTSE_TGSE$Fold>=0.5,"coord"] #763 peaks
+
+K4me1_Gene_permutation_enrichment(SE_peaks_up, background.peaks, permutation_number)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 0.03; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Promoter"
+#[1] "Enrichment: 0.01; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 0.88; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 0; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0; Feature: Poised Enhancer"
+#[1] "Enrichment: 0.58; Depletion 1; Feature: Promoter"
+
+K4me1_Gene_permutation_enrichment(SE_peaks_down, background.peaks, permutation_number)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 0.71; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Promoter"
+#[1] "Enrichment: 0.14; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 0.54; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0; Feature: Poised Enhancer"
+#[1] "Enrichment: 0.25; Depletion 1; Feature: Promoter"
+```
+
+# Genes with changes to DNAhm, H3K4me1, and H3K27ac in SE
+```{r}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/genes_DNAhm_H3K4me1_H3K27ac.RData")
+#"set16" (14 genes)
+
+SE_peaks_set16 <- H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$FDR<=0.05 & abs(H3K4me1_WTSE_TGSE$Fold)>=0.5 & H3K4me1_WTSE_TGSE$SYMBOL %in% set16,]
+write.csv(SE_peaks_set16, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/SE_H3K4me1_with_H3K27ac_DNAhm.csv", row.names=F)
+
+length(SE_set16_down <- SE_peaks_set16[SE_peaks_set16$Fold<0,"coord"]) #29
+length(SE_set16_up <- SE_peaks_set16[SE_peaks_set16$Fold>0,"coord"]) #4
+
+##Peaks differentially bound in SE - H3K4me1 gain (with H3K27ac, DNAhm changes)
+K4me1_Gene_permutation_enrichment(SE_set16_up, background.peaks=H3K4me1_WTSE_TGSE$coord, permutation_number=1000)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 0.88; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 1; Feature: Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Poised Enhancer"
+
+##Peaks differentially bound in SE - H3K4me1 loss (with H3K4me1, DNAhm changes)
+K4me1_Gene_permutation_enrichment(SE_set16_down, background.peaks=H3K4me1_WTSE_TGSE$coord, permutation_number=1000)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0.83; Feature: Active Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 0.63; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 1; Feature: Poised Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+```
+
+#Plotting counts for all SE peaks
+Split by increased vs decreased H3K4me1.
+```{r genomic enrichment WT, eval=F}
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for EE downregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% SE_set16_down,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#  Active Enhancer   Active Promoter Distal Intergenic            Intron   Poised Enhancer          Promoter 
+#                7                 1                 5                13                 1                 2 
+
+#add to dataframe
+rownames(locations_ChIP)[-which(rownames(locations_ChIP) %in% names(loc_summary))] #"3' UTR"     "5' UTR"     "Downstream" "Exon"  
+loc_summary <- c(loc_summary, "3' UTR"=0,"5' UTR"=0,"Exon"=0, "Downstream" =0)
+loc_summary <- loc_summary[match(rownames(locations_ChIP), names(loc_summary))]
+
+all(names(loc_summary)==rownames(locations_ChIP)) #TRUE
+locations_ChIP$real_count <- loc_summary
+
+locations_norm_down <- locations_ChIP
+locations_norm_down$Name <- rownames(locations_ChIP)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5' UTR","Exon","Intron","3' UTR","Downstream","Distal Intergenic"))
+locations_norm_down$K4me1_change <- "Decrease"
+```
+
+#Plotting genomic context enrichment, peaks with increased H3K4me1
+
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for EE upregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% SE_set16_up,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#         3' UTR Active Enhancer          Intron 
+#              1               1               2 
+
+#add to dataframe
+rownames(locations_ChIP)[-which(rownames(locations_ChIP) %in% names(loc_summary))] #"5' UTR"            "Active Promoter"   "Distal Intergenic" "Downstream"        "Exon"              "Poised Enhancer"   "Promoter"    
+loc_summary <- c(loc_summary, "5' UTR"=0,"Active Promoter"=0,"Distal Intergenic"=0, "Downstream"=0, "Promoter"=0, "Exon"=0, "Poised Enhancer"=0)
+loc_summary <- loc_summary[match(rownames(locations_ChIP), names(loc_summary))]
+
+all(names(loc_summary)==rownames(locations_ChIP)) #TRUE
+locations_ChIP$real_count <- loc_summary
+
+locations_norm_up <- locations_ChIP
+locations_norm_up$Name <- rownames(locations_ChIP)
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5' UTR","Exon","Intron","3' UTR","Downstream","Distal Intergenic"))
+locations_norm_up$K4me1_change <- "Increase"
+```
+
+#Plotting gene feature enrichment
+```{r plot genomic enrichment, eval=F}
+locations_norm <- rbind(locations_norm_up, locations_norm_down)
+min <- 0
+max <- max(locations_norm$real_count) +1
+
+locations_norm$Name <- rownames(locations_norm)
+locations_norm$Name <- gsub("1","",locations_norm$Name)
+locations_norm$Name <- gsub("'", "prime", locations_norm$Name)
+locations_norm$Name <- as.factor(locations_norm$Name)
+locations_norm$Name <- reorder.factor(locations_norm$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5prime UTR","Exon","Intron","3prime UTR","Downstream","Distal Intergenic"))
+
+ggplot(locations_norm, aes(x=Name, y=real_count, fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of Peaks") + scale_fill_manual(values=c("gray75", "gray48"), name="H3K4me1_change") + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))
+```
+
+# Genes with changes to DNAhm, H3K4me1, and H3K27ac in EE
+```{r}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/genes_DNAhm_H3K4me1_H3K27ac_EE.RData")
+#"set14" (11 genes)
+EE_peaks_set14 <- H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$FDR<=0.05 & abs(H3K4me1_WTEE_TGEE$Fold)>=0.5 & H3K4me1_WTEE_TGEE$SYMBOL %in% set14,]
+write.csv(EE_peaks_set14, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/EE_H3K4me1_with_H3K27ac_DNAhm.csv", row.names=F)
+
+length(EE_set14_down <- EE_peaks_set14[EE_peaks_set14$Fold<0,"coord"]) #16
+length(EE_set14_up <- EE_peaks_set14[EE_peaks_set14$Fold>0,"coord"]) #7
+
+##Peaks differentially bound in SE - H3K4me1 gain (with H3K27ac, DNAhm changes)
+K4me1_Gene_permutation_enrichment(EE_set14_up, background.peaks=H3K4me1_WTEE_TGEE$coord, permutation_number=1000)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Promoter"
+#[1] "Enrichment: 0.2; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 1; Feature: Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Poised Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Enhancer"
+
+##Peaks differentially bound in EE - H3K4me1 loss (with H3K4me1, DNAhm changes)
+K4me1_Gene_permutation_enrichment(EE_set14_down, background.peaks=H3K4me1_WTEE_TGEE$coord, permutation_number=1000)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 0.06; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 1; Feature: Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 0.92; Feature: Active Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Poised Enhancer"
+```
+
+#Plotting counts for all SE peaks
+Split by increased vs decreased H3K4me1.
+```{r genomic enrichment WT, eval=F}
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for EE downregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% EE_set14_down,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#  Active Enhancer Distal Intergenic            Intron 
+#                2                 2                10 
+#         Promoter 
+#                2 
+
+#add to dataframe
+rownames(locations_ChIP)[-which(rownames(locations_ChIP) %in% names(loc_summary))]
+#[1] "3' UTR"          "5' UTR"          "Active Promoter"
+#[4] "Downstream"      "Exon"            "Poised Enhancer"
+loc_summary <- c(loc_summary, "3' UTR"=0,"5' UTR"=0,"Exon"=0, "Downstream" =0, "Active Promoter"=0, "Poised Enhancer"=0)
+loc_summary <- loc_summary[match(rownames(locations_ChIP), names(loc_summary))]
+
+all(names(loc_summary)==rownames(locations_ChIP)) #TRUE
+locations_ChIP$real_count <- loc_summary
+
+locations_norm_down <- locations_ChIP
+locations_norm_down$Name <- rownames(locations_ChIP)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5' UTR","Exon","Intron","3' UTR","Downstream","Distal Intergenic"))
+locations_norm_down$K4me1_change <- "Decrease"
+```
+
+#Plotting genomic context enrichment, peaks with increased H3K4me1
+
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for EE upregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% EE_set14_up,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#Active Promoter          Intron        Promoter 
+#              1               5               1 
+
+#add to dataframe
+rownames(locations_ChIP)[-which(rownames(locations_ChIP) %in% names(loc_summary))] 
+#[1] "3' UTR"            "5' UTR"            "Active Enhancer"  
+#[4] "Distal Intergenic" "Downstream"        "Exon"             
+#[7] "Poised Enhancer" 
+loc_summary <- c(loc_summary,"3' UTR"=0, "5' UTR"=0,"Active Enhancer"=0,"Distal Intergenic"=0, "Downstream"=0,"Exon"=0, "Poised Enhancer"=0)
+loc_summary <- loc_summary[match(rownames(locations_ChIP), names(loc_summary))]
+
+all(names(loc_summary)==rownames(locations_ChIP)) #TRUE
+locations_ChIP$real_count <- loc_summary
+
+locations_norm_up <- locations_ChIP
+locations_norm_up$Name <- rownames(locations_ChIP)
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5' UTR","Exon","Intron","3' UTR","Downstream","Distal Intergenic"))
+locations_norm_up$K4me1_change <- "Increase"
+```
+
+#Plotting gene feature enrichment
+```{r plot genomic enrichment, eval=F}
+locations_norm <- rbind(locations_norm_up, locations_norm_down)
+min <- 0
+max <- max(locations_norm$real_count) +1
+
+locations_norm$Name <- rownames(locations_norm)
+locations_norm$Name <- gsub("1","",locations_norm$Name)
+locations_norm$Name <- gsub("'", "prime", locations_norm$Name)
+locations_norm$Name <- as.factor(locations_norm$Name)
+locations_norm$Name <- reorder.factor(locations_norm$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5prime UTR","Exon","Intron","3prime UTR","Downstream","Distal Intergenic"))
+
+ggplot(locations_norm, aes(x=Name, y=real_count, fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of Peaks") + scale_fill_manual(values=c("palegreen2", "palegreen4"), name="H3K4me1_change") + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))
+```
+
+# Genes with changes to H3K4me3, H3K4me1, and H3K27ac in EE
+```{r}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/genes_H3K4me1_H3K27ac_H3K4me3_EE.RData")
+#"set8" (9 genes)
+EE_peaks_set8 <- H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$FDR<=0.05 & abs(H3K4me1_WTEE_TGEE$Fold)>=0.5 & H3K4me1_WTEE_TGEE$SYMBOL %in% set8,]
+write.csv(EE_peaks_set8, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/EE_H3K4me1_with_H3K4me3_H3K27ac.csv", row.names=F)
+
+length(EE_set8_down <- EE_peaks_set8[EE_peaks_set8$Fold<0,"coord"]) #16
+length(EE_set8_up <- EE_peaks_set8[EE_peaks_set8$Fold>0,"coord"]) #6
+
+##Peaks differentially bound in SE - H3K4me1 gain (with H3K27ac, DNAhm changes)
+K4me1_Gene_permutation_enrichment(EE_set8_up, background.peaks=H3K4me1_WTEE_TGEE$coord, permutation_number=1000)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 0.1; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 1; Feature: Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Poised Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Enhancer"
+
+##Peaks differentially bound in EE - H3K4me1 loss (with H3K4me1, DNAhm changes)
+K4me1_Gene_permutation_enrichment(EE_set8_down, background.peaks=H3K4me1_WTEE_TGEE$coord, permutation_number=1000)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 1; Feature: Poised Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+```
+
+#Plotting counts for all SE peaks
+Split by increased vs decreased H3K4me1.
+```{r genomic enrichment WT, eval=F}
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for EE downregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% EE_set8_down,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#  Active Enhancer   Active Promoter Distal Intergenic            Intron 
+#                2                 3                 3                 5 
+#  Poised Enhancer 
+#                3 
+
+#add to dataframe
+rownames(locations_ChIP)[-which(rownames(locations_ChIP) %in% names(loc_summary))]
+#[1] "3' UTR"     "5' UTR"     "Downstream" "Exon"       "Promoter" 
+loc_summary <- c(loc_summary, "3' UTR"=0,"5' UTR"=0,"Exon"=0, "Downstream" =0, "Promoter"=0)
+loc_summary <- loc_summary[match(rownames(locations_ChIP), names(loc_summary))]
+
+all(names(loc_summary)==rownames(locations_ChIP)) #TRUE
+locations_ChIP$real_count <- loc_summary
+
+locations_norm_down <- locations_ChIP
+locations_norm_down$Name <- rownames(locations_ChIP)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5' UTR","Exon","Intron","3' UTR","Downstream","Distal Intergenic"))
+locations_norm_down$K4me1_change <- "Decrease"
+```
+
+#Plotting genomic context enrichment, peaks with increased H3K4me1
+
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for EE upregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% EE_set8_up,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#Distal Intergenic            Intron 
+#                1                 5
+
+#add to dataframe
+rownames(locations_ChIP)[-which(rownames(locations_ChIP) %in% names(loc_summary))] 
+#[1] "3' UTR"          "5' UTR"          "Active Enhancer" "Active Promoter"
+#[5] "Downstream"      "Exon"            "Poised Enhancer" "Promoter" 
+loc_summary <- c(loc_summary,"3' UTR"=0, "5' UTR"=0,"Active Enhancer"=0, "Active Promoter"=0, "Downstream"=0,"Exon"=0, "Poised Enhancer"=0, "Promoter"=0)
+loc_summary <- loc_summary[match(rownames(locations_ChIP), names(loc_summary))]
+
+all(names(loc_summary)==rownames(locations_ChIP)) #TRUE
+locations_ChIP$real_count <- loc_summary
+
+locations_norm_up <- locations_ChIP
+locations_norm_up$Name <- rownames(locations_ChIP)
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5' UTR","Exon","Intron","3' UTR","Downstream","Distal Intergenic"))
+locations_norm_up$K4me1_change <- "Increase"
+```
+
+#Plotting gene feature enrichment
+```{r plot genomic enrichment, eval=F}
+locations_norm <- rbind(locations_norm_up, locations_norm_down)
+min <- 0
+max <- max(locations_norm$real_count) +1
+
+locations_norm$Name <- rownames(locations_norm)
+locations_norm$Name <- gsub("1","",locations_norm$Name)
+locations_norm$Name <- gsub("'", "prime", locations_norm$Name)
+locations_norm$Name <- as.factor(locations_norm$Name)
+locations_norm$Name <- reorder.factor(locations_norm$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5prime UTR","Exon","Intron","3prime UTR","Downstream","Distal Intergenic"))
+
+ggplot(locations_norm, aes(x=Name, y=real_count, fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of Peaks") + scale_fill_manual(values=c("palegreen2", "palegreen4"), name="H3K4me1_change") + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))
+```
+
+# Genes with changes to H3K4me3, H3K4me1, and DNAhm in EE
+```{r}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/genes_H3K4me1_DNAhm_H3K4me3_EE.RData")
+#"set6" (3 genes)
+EE_peaks_set6 <- H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$FDR<=0.05 & abs(H3K4me1_WTEE_TGEE$Fold)>=0.5 & H3K4me1_WTEE_TGEE$SYMBOL %in% set6,]
+write.csv(EE_peaks_set6, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/EE_H3K4me1_with_H3K4me3_DNAhm.csv", row.names=F)
+length(EE_set6_down <- EE_peaks_set6[EE_peaks_set6$Fold<0,"coord"]) #3
+length(EE_set6_up <- EE_peaks_set6[EE_peaks_set6$Fold>0,"coord"]) #0
+
+##Peaks differentially bound in EE - H3K4me1 gain (with H3K27ac, DNAhm changes)
+K4me1_Gene_permutation_enrichment(EE_set8_down, background.peaks=H3K4me1_WTEE_TGEE$coord, permutation_number=1000)
+```
+
+#Plotting counts for all SE peaks
+Split by increased vs decreased H3K4me1.
+```{r genomic enrichment WT, eval=F}
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for EE downregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% EE_set6_down,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#  Active Enhancer Distal Intergenic          Promoter 
+#                1                 1                 1 
+
+#add to dataframe
+rownames(locations_ChIP)[-which(rownames(locations_ChIP) %in% names(loc_summary))]
+#[1] "3' UTR"          "5' UTR"          "Active Promoter" "Downstream"     
+#[5] "Exon"            "Intron"          "Poised Enhancer"
+loc_summary <- c(loc_summary, "3' UTR"=0,"5' UTR"=0,"Exon"=0, "Downstream" =0, "Active Promoter"=0, "Intron"=0, "Poised Enhancer"=0)
+loc_summary <- loc_summary[match(rownames(locations_ChIP), names(loc_summary))]
+
+all(names(loc_summary)==rownames(locations_ChIP)) #TRUE
+locations_ChIP$real_count <- loc_summary
+
+locations_norm_down <- locations_ChIP
+locations_norm_down$Name <- rownames(locations_ChIP)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5' UTR","Exon","Intron","3' UTR","Downstream","Distal Intergenic"))
+locations_norm_down$K4me1_change <- "Decrease"
+```
+
+#Plotting gene feature enrichment
+```{r plot genomic enrichment, eval=F}
+#locations_norm <- rbind(locations_norm_up, locations_norm_down)
+min <- 0
+max <- max(locations_norm_down$real_count) +1
+
+locations_norm_down$Name <- rownames(locations_norm_down)
+locations_norm_down$Name <- gsub("1","",locations_norm_down$Name)
+locations_norm_down$Name <- gsub("'", "prime", locations_norm_down$Name)
+locations_norm_down$Name <- as.factor(locations_norm_down$Name)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5prime UTR","Exon","Intron","3prime UTR","Downstream","Distal Intergenic"))
+
+ggplot(locations_norm_down, aes(x=Name, y=real_count, fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of Peaks") + scale_fill_manual(values=c("palegreen2", "palegreen4"), name="H3K4me1_change") + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))
+```
+
+# Genes with changes to H3K4me1 and H3K27ac in SE
+```{r}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/genes_H3K4me1_H3K27ac_SE.RData")
+#"set24" (462 genes)
+
+SE_peaks_set24 <- H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$FDR<=0.05 & abs(H3K4me1_WTSE_TGSE$Fold)>=0.5 & H3K4me1_WTSE_TGSE$SYMBOL %in% set24,]
+length(SE_set24_down <- SE_peaks_set24[SE_peaks_set24$Fold<0,"coord"]) #722
+length(SE_set24_up <- SE_peaks_set24[SE_peaks_set24$Fold>0,"coord"]) #149
+
+##Peaks differentially bound in SE - H3K4me1 gain (with H3K27ac changes)
+K4me1_Gene_permutation_enrichment(SE_set24_up, background.peaks=H3K4me1_WTSE_TGSE$coord, permutation_number=1000)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0.01; Feature: Active Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 0.8; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0.05; Feature: Poised Enhancer"
+#[1] "Enrichment: 1; Depletion 0.75; Feature: Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+
+##Peaks differentially bound in SE - H3K4me1 loss (with H3K27ac changes)
+K4me1_Gene_permutation_enrichment(SE_set24_down, background.peaks=H3K4me1_WTSE_TGSE$coord, permutation_number=1000)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0; Feature: Poised Enhancer"
+#[1] "Enrichment: 1; Depletion 0; Feature: Promoter"
+#[1] "Enrichment: 1; Depletion 0.17; Feature: Downstream"
+```
+
+#Plotting genomic context enrichment for SE-only sites
+Split by increased vs decreased H3K4me1.
+
+### Decreased H3K4me1
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+summary
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter 
+#             2336               384             22589             16310 
+#Distal Intergenic        Downstream              Exon            Intron 
+#            14932               699              5500             35933 
+#  Poised Enhancer          Promoter 
+#             9806             11902 
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for SE downregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% SE_peaks_down,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter Distal Intergenic 
+#               75                18               568               526               528 
+#       Downstream              Exon            Intron   Poised Enhancer          Promoter 
+#               27               198              1342               177               419 
+
+#add to dataframe
+locations_ChIP$real_count <- loc_summary
+#locations_ChIP$real_count[locations_ChIP$real_count==0] <- 1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+library(gtools)
+library(DescTools)
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_down <- locations_ChIP
+locations_norm_down$Name <- rownames(locations_ChIP)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_down$K4me1_change <- "Decrease"
+```
+
+### Increased H3K4me1
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#getting the number of hits in each genomic context for SE upregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% SE_peaks_up,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter Distal Intergenic        Downstream 
+#               27                 2                43                43               127                 8 
+#             Exon            Intron   Poised Enhancer          Promoter 
+#               54               357                13                89 
+
+#add to dataframe
+locations_ChIP$real_count <- loc_summary
+#replace 0's with 1 to avoid Inf calculations
+#locations_ChIP$real_count[locations_ChIP$real_count==0] <- 1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_up <- locations_ChIP
+locations_norm_up$Name <- rownames(locations_ChIP)
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_up$K4me1_change <- "Increase"
+```
+
+#Plotting gene feature enrichment
+```{r plot genomic enrichment, eval=F}
+locations_norm <- rbind(locations_norm_up, locations_norm_down)
+min <- min(locations_norm$fold_change) - 1
+max <- max(locations_norm$fold_change) + 1
+
+library(ggplot2)
+
+#add significance from permutation
+#incr: active enhancer ***, active promoter *, intron ***, poised enhancer *
+#dcr: active promoter ***, intron ***, poised enhancer ***, promoter ***
+rownames(locations_norm)
+locations_norm$sig <- as.factor(c(NA,NA,"***","*",NA,NA,NA,"***","*",NA,NA,NA,NA,"***",NA,NA,NA,NA,"***","***"))
+
+locations_norm$Name <- rownames(locations_norm)
+locations_norm$Name <- gsub("1","",locations_norm$Name)
+locations_norm$Name <- gsub("'", "prime", locations_norm$Name)
+locations_norm$Name <- as.factor(locations_norm$Name)
+locations_norm$Name <- reorder.factor(locations_norm$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5prime UTR","Exon","Intron","3prime UTR","Downstream","Distal Intergenic"))
+
+ggplot(locations_norm, aes(x=Name, y=fold_change, fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("gray75", "gray48"), name="H3K4me1_change") + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))  + 
+   geom_text(data = subset(locations_norm, fold_change >= 0), 
+      aes(Name, fold_change, group=K4me1_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=3) +
+    geom_text(data = subset(locations_norm, fold_change < 0), 
+      aes(Name, fold_change, group=K4me1_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=3)
+
+#gene ontology
+library(gprofiler2)
+gr_H3K4me1 <- gost(query = set24, organism = "mmusculus", ordered_query = FALSE, multi_query = FALSE, significant = TRUE, exclude_iea = FALSE, user_threshold = 0.05, correction_method = "fdr", domain_scope = "custom_annotated", custom_bg=unique(H3K4me1_WTSE_TGSE$SYMBOL[H3K4me1_WTSE_TGSE$SYMBOL %in% H3K27ac_WTSE_TGSE$SYMBOL]), sources = NULL, evcodes=TRUE)$result
+summary(as.factor(gr_H3K4me1$source))
+#GO:BP GO:CC GO:MF  KEGG MIRNA    TF    WP 
+#  241    62    16    30     1    73     1 
+
+#plotting top 10 GO:BP terms
+GOBP <- gr_H3K4me1[gr_H3K4me1$source=="GO:BP",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+library(dplyr)
+GOBP <- GOBP %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOBP$term_name <- factor(GOBP$term_name, levels=GOBP$term_name)
+#Num terms on x-axis, coloured by adjP
+ggplot(GOBP[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 40)))  + scale_fill_continuous(low="gray48",high="gray87", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank(), axis.text.y=element_blank()) + ggtitle("Top 10 GO:BP terms")+ geom_text(label=GOBP$term_name[1:10], col="black", position=position_fill(0.1), hjust=0)
+```
+
+# Genes with changes to H3K4me1 and H3K27ac in EE
+```{r}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/genes_H3K4me1_H3K27ac_EE.RData")
+#"set22" (486 genes)
+
+EE_peaks_set22 <- H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$FDR<=0.05 & abs(H3K4me1_WTEE_TGEE$Fold)>=0.5 & H3K4me1_WTEE_TGEE$SYMBOL %in% set22,]
+length(EE_set22_down <- EE_peaks_set22[EE_peaks_set22$Fold<0,"coord"]) #594
+length(EE_set22_up <- EE_peaks_set22[EE_peaks_set22$Fold>0,"coord"]) #307
+
+##Peaks differentially bound in EE - H3K4me1 gain (with H3K27ac changes)
+K4me1_Gene_permutation_enrichment(EE_set22_up, background.peaks=H3K4me1_WTEE_TGEE$coord, permutation_number=1000)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0.05; Feature: Poised Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Promoter"
+
+##Peaks differentially bound in EE - H3K4me1 loss (with H3K27ac changes)
+K4me1_Gene_permutation_enrichment(EE_set22_down, background.peaks=H3K4me1_WTEE_TGEE$coord, permutation_number=1000)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 0.46; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Promoter"
+#[1] "Enrichment: 0.57; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 0.49; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0.66; Feature: Poised Enhancer"
+#[1] "Enrichment: 1; Depletion 0.14; Feature: Promoter"
+```
+
+#Plotting genomic context enrichment for EE-only sites
+Split by increased vs decreased H3K4me1.
+
+### Decreased H3K4me1
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+summary
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter 
+#             2336               384             22589             16310 
+#Distal Intergenic        Downstream              Exon            Intron 
+#            14932               699              5500             35933 
+#  Poised Enhancer          Promoter 
+#             9806             11902 
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for SE downregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% EE_set22_down,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter Distal Intergenic        Downstream 
+#                8                 5                68                39                87                 3 
+#             Exon            Intron   Poised Enhancer          Promoter 
+#               36               265                39                44 
+
+#add to dataframe
+locations_ChIP$real_count <- loc_summary
+#locations_ChIP$real_count[locations_ChIP$real_count==0] <- 1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+library(gtools)
+library(DescTools)
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_down <- locations_ChIP
+locations_norm_down$Name <- rownames(locations_ChIP)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_down$K4me1_change <- "Decrease"
+```
+
+### Increased H3K4me1
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#getting the number of hits in each genomic context for SE upregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% EE_set22_up,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter Distal Intergenic        Downstream 
+#                7                 1                21                13                43                 1 
+#             Exon            Intron   Poised Enhancer          Promoter 
+#               18               164                13                26
+
+#add to dataframe
+locations_ChIP$real_count <- loc_summary
+#replace 0's with 1 to avoid Inf calculations
+#locations_ChIP$real_count[locations_ChIP$real_count==0] <- 1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_up <- locations_ChIP
+locations_norm_up$Name <- rownames(locations_ChIP)
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_up$K4me1_change <- "Increase"
+```
+
+#Plotting gene feature enrichment
+```{r plot genomic enrichment, eval=F}
+locations_norm <- rbind(locations_norm_up, locations_norm_down)
+min <- min(locations_norm$fold_change) - 1
+max <- max(locations_norm$fold_change) + 1
+
+library(ggplot2)
+
+#add significance from permutation
+#incr: active enhancer ***, active promoter ***, intron ***, poised enhancer *
+#dcr: active enhancer ***, active promoter ***, intron ***
+rownames(locations_norm)
+locations_norm$sig <- as.factor(c(NA,NA,"***","***",NA,NA,NA,"***","*",NA,NA,NA,"***","***",NA,NA,NA,"***",NA,NA))
+
+locations_norm$Name <- rownames(locations_norm)
+locations_norm$Name <- gsub("1","",locations_norm$Name)
+locations_norm$Name <- gsub("'", "prime", locations_norm$Name)
+locations_norm$Name <- as.factor(locations_norm$Name)
+locations_norm$Name <- reorder.factor(locations_norm$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5prime UTR","Exon","Intron","3prime UTR","Downstream","Distal Intergenic"))
+
+ggplot(locations_norm, aes(x=Name, y=fold_change, fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("palegreen2", "palegreen4"), name="H3K4me1_change") + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))  + 
+   geom_text(data = subset(locations_norm, fold_change >= 0), 
+      aes(Name, fold_change, group=K4me1_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=3) +
+    geom_text(data = subset(locations_norm, fold_change < 0), 
+      aes(Name, fold_change, group=K4me1_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=3)
+
+#gene ontology
+library(gprofiler2)
+gr_H3K4me1 <- gost(query = set22, organism = "mmusculus", ordered_query = FALSE, multi_query = FALSE, significant = TRUE, exclude_iea = FALSE, user_threshold = 0.05, correction_method = "fdr", domain_scope = "custom_annotated", custom_bg=unique(H3K4me1_WTSE_TGSE$SYMBOL[H3K4me1_WTSE_TGSE$SYMBOL %in% H3K27ac_WTSE_TGSE$SYMBOL]), sources = NULL, evcodes=TRUE)$result
+summary(as.factor(gr_H3K4me1$source))
+#GO:BP GO:CC GO:MF    HP  KEGG  REAC    TF    WP 
+#  244    85    28     3    27     2    99     1 
+
+#plotting top 10 GO:BP terms
+GOBP <- gr_H3K4me1[gr_H3K4me1$source=="GO:BP",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+library(dplyr)
+GOBP <- GOBP %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOBP$term_name <- factor(GOBP$term_name, levels=GOBP$term_name)
+#Num terms on x-axis, coloured by adjP
+ggplot(GOBP[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 40)))  + scale_fill_continuous(low="palegreen4",high="palegreen2", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank(), axis.text.y=element_blank()) + ggtitle("Top 10 GO:BP terms")+ geom_text(label=GOBP$term_name[1:10], col="black", position=position_fill(0.1), hjust=0)
+```
+
+
+# Gene feature enrichment for peaks mapping to differentially expressed genes
+Using peaks mapping to genes covered by RNA-seq as background.
+```{r}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/6-processed_RNAseq_data/nCounts_EE_HIP.RData")
+background_RNA <- H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$ENSEMBL %in% rownames(nCounts_mnc50),"coord"] #8,6359 peaks (far less!)
+
+#differentially expressed genes
+RNA_WTSE_TGSE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/6-processed_RNAseq_data/mmus_hippo12m_TG_STD_vs_WT_STD.csv")
+RNA_WTSE_TGSE$threshold <- (RNA_WTSE_TGSE$padj <= 0.15 & abs(RNA_WTSE_TGSE$log2FoldChange)>=0.3)
+ensgene_hits <- RNA_WTSE_TGSE[RNA_WTSE_TGSE$threshold==TRUE,"ensembl"]
+
+DEG_peaks <- H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$coord %in% peak_list & H3K4me1_WTSE_TGSE$ENSEMBL %in% ensgene_hits,] #105 peaks
+DEG_peaks_down <- DEG_peaks[DEG_peaks$Fold<0,"coord"] #86
+DEG_peaks_up <- DEG_peaks[DEG_peaks$Fold>0,"coord"] #19
+
+K4me1_Gene_permutation_enrichment(DEG_peaks_up, background_RNA, permutation_number)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 0.49; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 0.87; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0.66; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 1; Feature: Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 0.5; Feature: Active Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Poised Enhancer"
+#[1] "Enrichment: 1; Depletion 0.13; Feature: Active Enhancer"
+
+K4me1_Gene_permutation_enrichment(DEG_peaks_down, background_RNA, permutation_number)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 0.52; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 1; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 1; Feature: Poised Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+```
+
+## Plotting enrichments/depletions
+
+### Decreased H3K4me1
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for SE downregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% DEG_peaks_down,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#           3' UTR   Active Enhancer   Active Promoter Distal Intergenic              Exon            Intron 
+#                1                11                 9                12                 4                31 
+#  Poised Enhancer          Promoter 
+#                9                 9 
+loc_summary <- (c(loc_summary, "5' UTR"=0,"Downstream"=0))
+
+#add to dataframe
+locations_ChIP <- locations_ChIP[match(names(loc_summary), rownames(locations_ChIP)),]
+locations_ChIP$real_count <- loc_summary
+locations_ChIP$real_count[locations_ChIP$real_count==0] <- 0.1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_down <- locations_ChIP
+locations_norm_down$Name <- rownames(locations_ChIP)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_down$K4me1_change <- "Decrease"
+```
+
+### Increased H3K4me1
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#getting the number of hits in each genomic context for SE upregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% DEG_peaks_up,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#           3' UTR Distal Intergenic              Exon            Intron          Promoter 
+#                2                 4                 1                10                 2 
+loc_summary <- c(loc_summary, "Active Enhancer"=0, "Active Promoter"=0, "Poised Enhancer"=0, "5' UTR" =0,"Downstream"=0)
+
+#add to dataframe
+locations_ChIP <- locations_ChIP[match(names(loc_summary), rownames(locations_ChIP)),]
+locations_ChIP$real_count <- loc_summary
+locations_ChIP$real_count[locations_ChIP$real_count==0] <- 0.1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_up <- locations_ChIP
+locations_norm_up$Name <- rownames(locations_ChIP)
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_up$K4me1_change <- "Increase"
+```
+
+#Plotting gene feature enrichment
+```{r plot genomic enrichment, eval=F}
+locations_norm <- rbind(locations_norm_up, locations_norm_down)
+min <- min(locations_norm$fold_change) - 1
+max <- max(locations_norm$fold_change) + 1
+
+locations_norm$Name <- rownames(locations_norm)
+locations_norm$Name <- gsub("1","",locations_norm$Name)
+locations_norm$Name <- gsub("'", "prime", locations_norm$Name)
+locations_norm$Name <- as.factor(locations_norm$Name)
+locations_norm$Name <- reorder.factor(locations_norm$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5prime UTR","Exon","Intron","3prime UTR","Downstream","Distal Intergenic"))
+
+#fold change plot
+ggplot(locations_norm, aes(x=Name, y=fold_change, fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("gray75", "gray48"), name="H3K4me1_change") + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))
+
+#count plot
+min_count <- 0
+max_count <- max(locations_norm$real_count) + 1
+
+ggplot(locations_norm, aes(x=Name, y=real_count, fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of Peaks") + scale_fill_manual(values=c("gray75", "gray48")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min_count,max_count))
+```
+
+# Gene feature enrichment for peaks mapping to differentially expressed and hydroxymethylated genes
+Using peaks mapping to genes covered by RNA-seq and RRBS as background.
+```{r}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/5-methdiff_DNAm_DNAhm/hydroxy/BiSeq_site_specific/WTSE_TGSE/BH/betaResults_hydroxy_WTSE_TGSE_BH.RData")
+
+#use GRanges to subset by overlapping coordinates
+RRBS_gr <- GRanges(seqnames=betaResults_WTSE_TGSE_hmC$chr, ranges=IRanges(start=betaResults_WTSE_TGSE_hmC$pos, end=betaResults_WTSE_TGSE_hmC$pos))
+bg_RNA <- H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$coord %in% background_RNA,]
+H3K4me1_gr <- GRanges(seqnames=bg_RNA$seqnames, ranges=IRanges(start=bg_RNA$start, end=bg_RNA$end))
+H3K4me1_RRBS <- as.data.frame(subsetByOverlaps(H3K4me1_gr, RRBS_gr))
+background_RNA_hmC <- paste(H3K4me1_RRBS$seqnames, paste(H3K4me1_RRBS$start, H3K4me1_RRBS$end, sep="-"), sep=": ") #3,543 peaks
+
+#differentially hydroxymethylated sites
+H3K4me1_RNA_gr <- GRanges(seqnames=DEG_peaks$seqnames, ranges=IRanges(start=DEG_peaks$start, end=DEG_peaks$end))
+hmC_gr <- GRanges(seqnames=betaResults_WTSE_TGSE_hmC[betaResults_WTSE_TGSE_hmC$threshold==TRUE,"chr"], ranges=IRanges(start=betaResults_WTSE_TGSE_hmC[betaResults_WTSE_TGSE_hmC$threshold==TRUE,"pos"], end=betaResults_WTSE_TGSE_hmC[betaResults_WTSE_TGSE_hmC$threshold==TRUE,"pos"]))
+H3K4me1_RNA_hmC <- as.data.frame(subsetByOverlaps(H3K4me1_RNA_gr, hmC_gr)) #only two peaks!
+
+##### overlapping background and hits on gene-level (this was used for upset plots)
+background_RNA_hmC <- bg_RNA[bg_RNA$SYMBOL %in% betaResults_WTSE_TGSE_hmC[complete.cases(betaResults_WTSE_TGSE_hmC$gene),"gene"],"coord"] #49,291 peaks
+DHMGs <- unique(betaResults_WTSE_TGSE_hmC[complete.cases(betaResults_WTSE_TGSE_hmC$gene) & betaResults_WTSE_TGSE_hmC$threshold==TRUE,"gene"]) #931 genes
+
+DHMG_peaks <- bg_RNA[bg_RNA$SYMBOL %in% DHMGs & bg_RNA$coord %in% DEG_peaks$coord,] #30 peaks (30/32 peaks with differential expression)
+
+DHMG_peaks_down <- DHMG_peaks[DHMG_peaks$Fold<0,"coord"] #6
+DHMG_peaks_up <- DHMG_peaks[DHMG_peaks$Fold>0,"coord"] #24
+
+K4me1_Gene_permutation_enrichment(DHMG_peaks_up, background_RNA_hmC, permutation_number)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 0.71; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 1; Feature: Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Poised Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Enhancer"
+
+K4me1_Gene_permutation_enrichment(DHMG_peaks_down, background_RNA_hmC, permutation_number)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 1; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 1; Feature: Poised Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+```
+
+## Plotting enrichments/depletions
+
+### Decreased H3K4me1
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for SE downregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% DHMG_peaks_down,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#  Active Enhancer   Active Promoter Distal Intergenic              Exon            Intron   Poised Enhancer 
+#                5                 1                 3                 2                10                 2 
+#         Promoter 
+#                1 
+loc_summary <- (c(loc_summary, "3' UTR"=0, "5' UTR"=0,"Downstream"=0))
+
+#add to dataframe
+locations_ChIP <- locations_ChIP[match(names(loc_summary), rownames(locations_ChIP)),]
+locations_ChIP$real_count <- loc_summary
+locations_ChIP$real_count[locations_ChIP$real_count==0] <- 0.1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_down <- locations_ChIP
+locations_norm_down$Name <- rownames(locations_ChIP)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_down$K4me1_change <- "Decrease"
+```
+
+### Increased H3K4me1
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#getting the number of hits in each genomic context for SE upregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% DHMG_peaks_up,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#  3' UTR   Intron Promoter 
+#       1        4        1 
+loc_summary <- c(loc_summary, "Active Enhancer"=0, "Active Promoter"=0, "Poised Enhancer"=0, "5' UTR" =0,"Downstream"=0, "Distal Intergenic"=0, "Exon"=0)
+
+#add to dataframe
+locations_ChIP <- locations_ChIP[match(names(loc_summary), rownames(locations_ChIP)),]
+locations_ChIP$real_count <- loc_summary
+locations_ChIP$real_count[locations_ChIP$real_count==0] <- 0.1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_up <- locations_ChIP
+locations_norm_up$Name <- rownames(locations_ChIP)
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_up$K4me1_change <- "Increase"
+```
+
+#Plotting gene feature enrichment
+```{r plot genomic enrichment, eval=F}
+locations_norm <- rbind(locations_norm_up, locations_norm_down)
+min <- min(locations_norm$fold_change) - 1
+max <- max(locations_norm$fold_change) + 1
+
+locations_norm$Name <- rownames(locations_norm)
+locations_norm$Name <- gsub("1","",locations_norm$Name)
+locations_norm$Name <- gsub("'", "prime", locations_norm$Name)
+locations_norm$Name <- as.factor(locations_norm$Name)
+locations_norm$Name <- reorder.factor(locations_norm$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5prime UTR","Exon","Intron","3prime UTR","Downstream","Distal Intergenic"))
+
+#fold change plot
+ggplot(locations_norm, aes(x=Name, y=fold_change, fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("gray75", "gray48"), name="H3K4me1_change") + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))
+
+#count plot
+min_count <- 0
+max_count <- max(locations_norm$real_count) + 1
+
+ggplot(locations_norm, aes(x=Name, y=real_count, fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of Peaks") + scale_fill_manual(values=c("gray75", "gray48")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min_count,max_count))
+```
+
+# Permuting gene feature enrichments for peaks differentially bound only in SE, only in EE, or in SE and EE
+```{r}
+length(SE_down <- SE_peaks_down[-which(SE_peaks_down %in% EE_peaks_down)]) #3,017
+K4me1_Gene_permutation_enrichment(SE_down, background.peaks, permutation_number)
+
+#without custom annotation
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 0.756; Feature: 3' UTR"
+#[1] "Enrichment: 0.994; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0.931; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 1; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 1; Feature: Promoter"
+
+#no enrichments/depletions
+
+#with custom annotation
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0; Feature: Poised Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Promoter"
+
+#depleted for active and poised enhancers
+#enriched for introns
+
+length(SE_up <- SE_peaks_up[-which(SE_peaks_up %in% EE_peaks_up)]) #585
+K4me1_Gene_permutation_enrichment(SE_up, background.peaks, permutation_number)
+
+#without custom annotation
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 0.896; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0.238; Feature: Promoter"
+
+#enriched for introns
+
+#with custom annotation
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 0.13; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Promoter"
+#[1] "Enrichment: 0; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0.09; Feature: Poised Enhancer"
+#[1] "Enrichment: 0.52; Depletion 1; Feature: Promoter"
+
+#depleted for active enhancers and promoters
+#enriched for distal intergenic, intron
+```
+
+#Plotting genomic context enrichment for SE-only sites
+Split by increased vs decreased H3K4me1.
+
+### Decreased H3K4me1
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+summary
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter 
+#             2336               384             22589             16310 
+#Distal Intergenic        Downstream              Exon            Intron 
+#            14932               699              5500             35933 
+#  Poised Enhancer          Promoter 
+#             9806             11902 
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for SE downregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% SE_down,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter 
+#               62                13               477               418 
+#Distal Intergenic        Downstream              Exon            Intron 
+#              393                20               147              1023 
+#  Poised Enhancer          Promoter 
+#              144               320
+
+#add to dataframe
+locations_ChIP$real_count <- loc_summary
+#locations_ChIP$real_count[locations_ChIP$real_count==0] <- 1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+library(gtools)
+library(DescTools)
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_down <- locations_ChIP
+locations_norm_down$Name <- rownames(locations_ChIP)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_down$K4me1_change <- "Decrease"
+```
+
+### Increased H3K4me1
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#getting the number of hits in each genomic context for SE upregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% SE_up,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter 
+#               20                 2                32                32 
+#Distal Intergenic        Downstream              Exon            Intron 
+#               99                 5                36               276 
+#  Poised Enhancer          Promoter 
+#               13                70 
+
+#add to dataframe
+locations_ChIP$real_count <- loc_summary
+#replace 0's with 1 to avoid Inf calculations
+#locations_ChIP$real_count[locations_ChIP$real_count==0] <- 1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_up <- locations_ChIP
+locations_norm_up$Name <- rownames(locations_ChIP)
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_up$K4me1_change <- "Increase"
+```
+
+#Plotting gene feature enrichment
+```{r plot genomic enrichment, eval=F}
+locations_norm <- rbind(locations_norm_up, locations_norm_down)
+min <- min(locations_norm$fold_change) - 1
+max <- max(locations_norm$fold_change) + 1
+
+library(ggplot2)
+
+#add significance from permutation
+#incr: active enhancer ***, active promoter ***, intergenic ***, intron ***
+#dcr: active enhancer ***, intron ***, poised enhancer ***
+rownames(locations_norm)
+locations_norm$sig <- as.factor(c(NA,NA,"***","***","***",NA,NA,"***",NA,NA,NA,NA,"***",NA,NA,NA,NA,"***","***",NA))
+
+locations_norm$Name <- rownames(locations_norm)
+locations_norm$Name <- gsub("1","",locations_norm$Name)
+locations_norm$Name <- gsub("'", "prime", locations_norm$Name)
+locations_norm$Name <- as.factor(locations_norm$Name)
+locations_norm$Name <- reorder.factor(locations_norm$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5prime UTR","Exon","Intron","3prime UTR","Downstream","Distal Intergenic"))
+
+ggplot(locations_norm, aes(x=Name, y=fold_change, fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("gray75", "gray48"), name="H3K4me1_change") + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))  + 
+   geom_text(data = subset(locations_norm, fold_change >= 0), 
+      aes(Name, fold_change, group=K4me1_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=2) +
+    geom_text(data = subset(locations_norm, fold_change < 0), 
+      aes(Name, fold_change, group=K4me1_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=2)
+```
+![Gene features fold enrichment for SE-only differentially bound peaks](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/SE_only_gene_features.png)
+
+## Peaks only differentially bound in SE ("rescue") - all
+```{r}
+length(SE_only <- SE_peaks[-which(SE_peaks %in% EE_peaks)]) #3601
+K4me1_Gene_permutation_enrichment(SE_only, background.peaks, permutation_number)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 0.72; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0.34; Feature: Active Promoter"
+#[1] "Enrichment: 0.12; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 0.62; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0; Feature: Poised Enhancer"
+#[1] "Enrichment: 0.35; Depletion 1; Feature: Promoter"
+
+#depleted for active and poised enhancers, enriched for introns
+
+##Peaks differentially bound in SE and EE - H3K4me1 loss
+length(SE_EE_down <- SE_peaks_down[which(SE_peaks_down %in% EE_peaks_down)]) #862
+K4me1_Gene_permutation_enrichment(SE_EE_down, background.peaks, permutation_number)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Promoter"
+#[1] "Enrichment: 0.02; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 0.97; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0; Feature: Poised Enhancer"
+#[1] "Enrichment: 0.55; Depletion 1; Feature: Promoter"
+
+#depleted for active and poised enhancers, enriched for intergenic and introns
+
+##Peaks differentially bound in SE and EE - H3K4me1 gain
+length(SE_EE_up <- SE_peaks_up[which(SE_peaks_up %in% EE_peaks_up)]) #178
+K4me1_Gene_permutation_enrichment(SE_EE_up, background.peaks, permutation_number)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 0.79; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0.01; Feature: Active Promoter"
+#[1] "Enrichment: 1; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 1; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 1; Feature: Promoter"
+#[1] "Enrichment: 1; Depletion 0; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Poised Enhancer"
+
+#depleted for active promoters, poised enhancers, and 5' UTRs; enriched for introns
+
+##Peaks differentially bound in SE and EE - all
+length(SE_EE <- SE_peaks[which(SE_peaks %in% EE_peaks)]) #1040
+K4me1_Gene_permutation_enrichment(SE_EE, background.peaks, permutation_number)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0.35; Feature: Active Promoter"
+#[1] "Enrichment: 0.01; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 0.37; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0; Feature: Poised Enhancer"
+#[1] "Enrichment: 0.49; Depletion 1; Feature: Promoter"
+
+#deplted for active and poised enhancers, enriched for intergenic and introns (same as the only-downregulated peaks)
+```
+
+#Plotting genomic context enrichment for SE/EE shared peaks
+Split by increased vs decreased H3K4me1.
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for SE downregulated sites
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% SE_EE_down,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter 
+#               13                 5                91               108 
+#Distal Intergenic        Downstream              Exon            Intron 
+#              135                 7                51               319 
+#  Poised Enhancer          Promoter 
+#               33               100 
+
+#add to dataframe
+locations_ChIP$real_count <- loc_summary
+#replace 0's with 1 to avoid Inf calculations
+#locations_ChIP$real_count[locations_ChIP$real_count==0] <- 1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_down <- locations_ChIP
+locations_norm_down$Name <- rownames(locations_ChIP)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_down$K4me1_change <- "Decrease"
+```
+
+#Plotting genomic context enrichment, sites with increased H3K4me1
+
+```{r genomic enrichment WT, eval=F}
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for SE upregulated sites
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% SE_EE_up,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#           3' UTR   Active Enhancer   Active Promoter Distal Intergenic 
+#                7                11                11                28 
+#       Downstream              Exon            Intron          Promoter 
+#                3                18                81                19 
+loc_summary <- c(loc_summary, "Poised Enhancer"=0, "5' UTR"=0)
+
+#add to dataframe
+locations_ChIP$real_count <- loc_summary + 1
+#replace 0's with 1 to avoid Inf calculations
+#locations_ChIP$real_count[locations_ChIP$real_count==0] <- 1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_up <- locations_ChIP
+locations_norm_up$Name <- rownames(locations_ChIP)
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_up$K4me1_change <- "Increase"
+```
+
+#Plotting gene feature enrichment
+H3K4me1 loss and gain will be plotted separately (loss to be its own figure).
+```{r plot genomic enrichment, eval=F}
+###fold change plot (decreased H3K4me1)
+min <- min(locations_norm_down$fold_change) - 1
+max <- max(locations_norm_down$fold_change) + 1
+
+#add significance from permutation
+rownames(locations_norm_down)
+#dcr: active enhancer ***, intergenic *, intron ***, poised enhancer ***
+locations_norm_down$sig <- as.factor(c(NA,NA,"***",NA,"*",NA,NA,"***","***",NA))
+
+locations_norm_down$Name <- rownames(locations_norm_down)
+locations_norm_down$Name <- gsub("'", "prime", locations_norm_down$Name)
+locations_norm_down$Name <- as.factor(locations_norm_down$Name)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5prime UTR","Exon","Intron","3prime UTR","Downstream","Distal Intergenic"))
+
+ggplot(locations_norm_down, aes(x=Name, y=fold_change,fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("plum2"), name="H3K4me1_change") + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))  + 
+   geom_text(data = subset(locations_norm_down, fold_change >= 0), 
+      aes(Name, fold_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=2) +
+    geom_text(data = subset(locations_norm_down, fold_change < 0), 
+      aes(Name, fold_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=2)
+
+###fold change plot (increased H3K4me1)
+min <- min(locations_norm_up$fold_change) - 1
+max <- max(locations_norm_up$fold_change) + 1
+
+#add significance from permutation
+rownames(locations_norm_up)
+#incr: active promoter *, intron ***, 5' UTR ***, poised enhancer ***
+locations_norm_up$sig <- as.factor(c(NA,"***",NA,"*",NA,NA,NA,"***","***",NA))
+
+locations_norm_up$Name <- rownames(locations_norm_up)
+locations_norm_up$Name <- gsub("'", "prime", locations_norm_up$Name)
+locations_norm_up$Name <- as.factor(locations_norm_up$Name)
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5prime UTR","Exon","Intron","3prime UTR","Downstream","Distal Intergenic"))
+
+ggplot(locations_norm_up, aes(x=Name, y=fold_change,fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("plum4"), name="H3K4me1_change") + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))  + 
+   geom_text(data = subset(locations_norm_up, fold_change >= 0), 
+      aes(Name, fold_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=2) +
+    geom_text(data = subset(locations_norm_up, fold_change < 0), 
+      aes(Name, fold_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=2)
+```
+![Gene features fold enrichment for SE and EE peaks with decreased H3K4me1](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/SE_EE_down_gene_features.png)
+
+![Gene features fold enrichment for SE and EE peaks with increased H3K4me1](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/SE_EE_up_gene_features.png)
+
+## Peaks differentially bound in EE only
+```{r}
+##Peaks differentially bound in EE only - H3K4me1 loss
+length(EE_down <- EE_peaks_down[-which(EE_peaks_down %in% SE_peaks_down)]) #2484
+K4me1_Gene_permutation_enrichment(EE_down, background.peaks, permutation_number)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0.01; Feature: Active Promoter"
+#[1] "Enrichment: 0; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 0.02; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0; Feature: Poised Enhancer"
+#[1] "Enrichment: 0.05; Depletion 1; Feature: Promoter"
+
+#depleted for active and poised enhancers, active promoters
+#enriched for intergenic, exon, intron, promoter
+
+##Peaks differentially bound in EE only - all
+length(EE_only <- EE_peaks[-which(EE_peaks %in% SE_peaks)]) #3963
+K4me1_Gene_permutation_enrichment(EE_only, background.peaks, permutation_number)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 0.29; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Promoter"
+#[1] "Enrichment: 0; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 0; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0; Feature: Poised Enhancer"
+#[1] "Enrichment: 0; Depletion 1; Feature: Promoter"
+
+#depleted for active and poised enhancers, active promoters
+#enriched for intergenic, exon, intron, promoter
+
+##Peaks differentially bound in EE only - H3K4me1 gain
+length(EE_up <- EE_peaks_up[-which(EE_peaks_up %in% SE_peaks_up)]) #1478
+K4me1_Gene_permutation_enrichment(EE_up, background.peaks, permutation_number)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 0.35; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Promoter"
+#[1] "Enrichment: 0.03; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 0.08; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0; Feature: Poised Enhancer"
+#[1] "Enrichment: 0; Depletion 1; Feature: Promoter"
+
+#depleted for active and poised enhancers, active promoters
+#enriched for intergenic, exon, intron, promoter
+```
+
+#Plotting genomic context enrichment for EE-only sites
+Split by increased vs decreased H3K4me1.
+```{r genomic enrichment WT, eval=F}
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for EE downregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% EE_down,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter 
+#               54                 7               257               281 
+#Distal Intergenic        Downstream              Exon            Intron 
+#              435                18               145               881 
+#  Poised Enhancer          Promoter 
+#              122               284 
+
+#add to dataframe
+locations_ChIP$real_count <- loc_summary
+#replace 0's with 1 to avoid Inf calculations
+#locations_ChIP$real_count[locations_ChIP$real_count==0] <- 1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_down <- locations_ChIP
+locations_norm_down$Name <- rownames(locations_ChIP)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_down$K4me1_change <- "Decrease"
+```
+
+#Plotting genomic context enrichment, peaks with increased H3K4me1
+
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for EE upregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% EE_up,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter 
+#               39                 5               119               105 
+#Distal Intergenic        Downstream              Exon            Intron 
+#              218                 8                92               623 
+#  Poised Enhancer          Promoter 
+#               76               194 
+
+#add to dataframe
+locations_ChIP$real_count <- loc_summary
+#replace 0's with 1 to avoid Inf calculations
+#locations_ChIP$real_count[locations_ChIP$real_count==0] <- 1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_up <- locations_ChIP
+locations_norm_up$Name <- rownames(locations_ChIP)
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_up$K4me1_change <- "Increase"
+```
+
+#Plotting gene feature enrichment
+```{r plot genomic enrichment, eval=F}
+locations_norm <- rbind(locations_norm_up, locations_norm_down)
+min <- min(locations_norm$fold_change) -1
+max <- max(locations_norm$fold_change) +1
+
+#add significance from permutation
+rownames(locations_norm)
+#incr: active enhancer ***, active promoter ***, intergenic *, intron ***, poised enhancer ***, promoter ***
+#dcr: active enhancer ***, active promoter *, intergenic ***, exon *, intron ***, poised enhancer ***, promoter *
+locations_norm$sig <- as.factor(c(NA,NA,"***","***","*",NA,NA,"***","***","***",NA,NA,"***","*","***",NA,"*","***","***","*"))
+
+locations_norm$Name <- rownames(locations_norm)
+locations_norm$Name <- gsub("1","",locations_norm$Name)
+locations_norm$Name <- gsub("'", "prime", locations_norm$Name)
+locations_norm$Name <- as.factor(locations_norm$Name)
+locations_norm$Name <- reorder.factor(locations_norm$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5prime UTR","Exon","Intron","3prime UTR","Downstream","Distal Intergenic"))
+
+ggplot(locations_norm, aes(x=Name, y=fold_change, fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("palegreen2", "palegreen4"), name="H3K4me1_change") + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))  + 
+   geom_text(data = subset(locations_norm, fold_change >= 0), 
+      aes(Name, fold_change, group=K4me1_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=2) +
+    geom_text(data = subset(locations_norm, fold_change < 0), 
+      aes(Name, fold_change, group=K4me1_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=2)
+```
+![Gene features fold enrichment for EE-only differentially bound peaks](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/EE_only_gene_features.png)
+## Peaks differentially bound in EE - all
+```{r}
+##Peaks differentially bound in EE - H3K4me1 loss
+K4me1_Gene_permutation_enrichment(EE_peaks_down, background.peaks=H3K4me1_WTEE_TGEE$coord, permutation_number=1000)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Promoter"
+#[1] "Enrichment: 0; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 0; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0; Feature: Poised Enhancer"
+#[1] "Enrichment: 0.01; Depletion 1; Feature: Promoter"
+
+##Peaks differentially bound in EE - H3K4me1 gain
+K4me1_Gene_permutation_enrichment(EE_peaks_up, background.peaks=H3K4me1_WTEE_TGEE$coord, permutation_number=1000)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 0.16; Depletion 1; Feature: 3' UTR"
+#[1] "Enrichment: 1; Depletion 1; Feature: 5' UTR"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Enhancer"
+#[1] "Enrichment: 1; Depletion 0; Feature: Active Promoter"
+#[1] "Enrichment: 0.02; Depletion 1; Feature: Distal Intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: Downstream"
+#[1] "Enrichment: 0; Depletion 1; Feature: Exon"
+#[1] "Enrichment: 0; Depletion 1; Feature: Intron"
+#[1] "Enrichment: 1; Depletion 0; Feature: Poised Enhancer"
+#[1] "Enrichment: 0; Depletion 1; Feature: Promoter"
+```
+
+#Plotting genomic context enrichment for all EE peaks
+Split by increased vs decreased H3K4me1.
+```{r genomic enrichment WT, eval=F}
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for EE downregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% EE_peaks_down,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter Distal Intergenic 
+#               67                12               348               389               570 
+#       Downstream              Exon            Intron   Poised Enhancer          Promoter 
+#               25               196              1200               155               384 
+
+#add to dataframe
+locations_ChIP$real_count <- loc_summary
+#replace 0's with 1 to avoid Inf calculations
+#locations_ChIP$real_count[locations_ChIP$real_count==0] <- 1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_down <- locations_ChIP
+locations_norm_down$Name <- rownames(locations_ChIP)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_down$K4me1_change <- "Decrease"
+```
+
+#Plotting genomic context enrichment, peaks with increased H3K4me1
+
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_K4me1_Relations$annotation))
+
+locations_ChIP <- data.frame(ChIP_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_ChIP$ChIP_fraction <- as.vector(apply(locations_ChIP, 2, function(x) x/sum(locations_ChIP$ChIP_count)))
+
+#getting the number of hits in each genomic context for EE upregulated peaks
+locations <- Gene_K4me1_Relations[Gene_K4me1_Relations$coord %in% EE_peaks_up,"annotation"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#           3' UTR            5' UTR   Active Enhancer   Active Promoter Distal Intergenic 
+#               46                 5               130               116               246 
+#       Downstream              Exon            Intron   Poised Enhancer          Promoter 
+#               11               110               704                76               213 
+
+#add to dataframe
+locations_ChIP$real_count <- loc_summary
+#replace 0's with 1 to avoid Inf calculations
+#locations_ChIP$real_count[locations_ChIP$real_count==0] <- 1
+locations_ChIP$real_fraction <- sapply(1:length(locations_ChIP$real_count), function(x) locations_ChIP$real_count[x]/sum(locations_ChIP$real_count))
+
+#caluclate fold change
+locations_ChIP$fold_change <- sapply(1:nrow(locations_ChIP), function(x) foldchange(locations_ChIP$real_fraction[x], locations_ChIP$ChIP_fraction[x]))
+
+locations_norm_up <- locations_ChIP
+locations_norm_up$Name <- rownames(locations_ChIP)
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5'UTR","Exon","Intron","3'UTR","Downstream","Distal Intergenic"))
+locations_norm_up$K4me1_change <- "Increase"
+```
+
+#Plotting gene feature enrichment
+```{r plot genomic enrichment, eval=F}
+locations_norm <- rbind(locations_norm_up, locations_norm_down)
+min <- min(locations_norm$fold_change) -1
+max <- max(locations_norm$fold_change) +1
+
+#add significance from permutation
+rownames(locations_norm)
+
+locations_norm$sig <- as.factor(c(NA,NA,"***","***","*",NA,"***","***","***","***",NA,NA,"***","***","***",NA,"***","***",NA,"*"))
+
+locations_norm$Name <- rownames(locations_norm)
+locations_norm$Name <- gsub("1","",locations_norm$Name)
+locations_norm$Name <- gsub("'", "prime", locations_norm$Name)
+locations_norm$Name <- as.factor(locations_norm$Name)
+locations_norm$Name <- reorder.factor(locations_norm$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "Promoter","5prime UTR","Exon","Intron","3prime UTR","Downstream","Distal Intergenic"))
+
+ggplot(locations_norm, aes(x=Name, y=fold_change, fill=K4me1_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("palegreen2", "palegreen4"), name="H3K4me1_change") + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))  + 
+   geom_text(data = subset(locations_norm, fold_change >= 0), 
+      aes(Name, fold_change, group=K4me1_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=2) +
+    geom_text(data = subset(locations_norm, fold_change < 0), 
+      aes(Name, fold_change, group=K4me1_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=2)
+```
+
+#Cell type enrichment of hits
+Code from Thomas Hentrich (University of Tuebingen).
+```{r celltype, eval=F}
+#get list of differentially bound genes
+WTSE_TGSE_hits <- unique(H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$FDR<=0.05 & abs(H3K4me1_WTSE_TGSE$Fold)>=0.5,"SYMBOL"])
+length(WTSE_TGSE_hits <- WTSE_TGSE_hits[complete.cases(WTSE_TGSE_hits)]) #3437 DB genes
+WTSE_TGSE_up <- unique(H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$FDR<=0.05 & H3K4me1_WTSE_TGSE$Fold>=0.5,"SYMBOL"])
+length(WTSE_TGSE_up <- WTSE_TGSE_up[complete.cases(WTSE_TGSE_up)]) #720 DB genes
+WTSE_TGSE_down <- unique(H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$FDR<=0.05 & H3K4me1_WTSE_TGSE$Fold<=-0.5,"SYMBOL"])
+length(WTSE_TGSE_down <- WTSE_TGSE_down[complete.cases(WTSE_TGSE_down)]) #2976 DB genes
+
+#mouseMart = useEnsembl( biomart="ENSEMBL_MART_ENSEMBL", dataset = "mmusculus_gene_ensembl", version = 90)
+
+#get mgi symbol to match up with Linnarsson single cell dataset
+#myMap = getBM( attributes = c("ensembl_gene_id","mgi_symbol"),
+#               filters = "ensembl_gene_id",
+#               values = WTSE_TGSE_hits,
+#               mart = mouseMart,
+#               uniqueRows = T)
+  
+linnarsson = read.table(file = "~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/analysis_scripts_final/editedData.txt" , sep = '\t' , header = F)
+
+# caclulate common genes
+#idx = na.omit(match(myMap$mgi_symbol , linnarsson$V1))
+length(background_genes <- unique(H3K4me1_WTSE_TGSE$SYMBOL[complete.cases(H3K4me1_WTSE_TGSE$SYMBOL)])) #18,245
+
+# reduce Linnarsson set to common genes
+nrow(linnarsson <- linnarsson[linnarsson$V1 %in% background_genes,]) #15,318
+
+#globalOverlap = intersect( myMap$mgi_symbol , linnarsson$V1 )
+
+#list of genes in your dataset which make up each celltype class
+#"IntN" (1), "PyrN" (3),"Oligo" (4), "Micro" (5), "Astro" (7)
+classes = list(class1 = linnarsson$V1[linnarsson$V2 == 1],
+               class2 = linnarsson$V1[linnarsson$V2 == 2],
+               class3 = linnarsson$V1[linnarsson$V2 == 3],
+               class4 = linnarsson$V1[linnarsson$V2 == 4],
+               class5 = linnarsson$V1[linnarsson$V2 == 5],
+               class6 = linnarsson$V1[linnarsson$V2 == 6],
+               class7 = linnarsson$V1[linnarsson$V2 == 7],
+               class8 = linnarsson$V1[linnarsson$V2 == 8],
+               class9 = linnarsson$V1[linnarsson$V2 == 9])
+
+#list of hits in each class
+intersectsAll = list(intersect1 = intersect(classes$class1 , WTSE_TGSE_hits),
+                   intersect2 = intersect(classes$class2 , WTSE_TGSE_hits),
+                   intersect3 = intersect(classes$class3 , WTSE_TGSE_hits),
+                   intersect4 = intersect(classes$class4 , WTSE_TGSE_hits),
+                   intersect5 = intersect(classes$class5 , WTSE_TGSE_hits),
+                   intersect6 = intersect(classes$class6 , WTSE_TGSE_hits),
+                   intersect7 = intersect(classes$class7 , WTSE_TGSE_hits),
+                   intersect8 = intersect(classes$class8 , WTSE_TGSE_hits),
+                   intersect9 = intersect(classes$class9 , WTSE_TGSE_hits)
+                 )
+
+#all microglial genes
+length(micro_genes_all <- intersectsAll$intersect5) #43 DB genes are microglial
+length(classes$class5) #287 total genes in the category
+#43/287 = 15% of the genes in class
+
+intersectsDown = list(intersect1 = intersect(classes$class1 , WTSE_TGSE_down),
+                   intersect2 = intersect(classes$class2 , WTSE_TGSE_down),
+                   intersect3 = intersect(classes$class3 , WTSE_TGSE_down),
+                   intersect4 = intersect(classes$class4 , WTSE_TGSE_down),
+                   intersect5 = intersect(classes$class5 , WTSE_TGSE_down),
+                   intersect6 = intersect(classes$class6 , WTSE_TGSE_down),
+                   intersect7 = intersect(classes$class7 , WTSE_TGSE_down),
+                   intersect8 = intersect(classes$class8 , WTSE_TGSE_down),
+                   intersect9 = intersect(classes$class9 , WTSE_TGSE_down)
+                 )
+
+#microglial genes with H3K4me1 loss
+length(micro_genes_down <- intersectsDown$intersect5) #38 DB genes are microglial
+length(classes$class5) #287 total genes in the category
+#38/287 = 13% of the genes in class
+
+
+intersectsUp = list(intersect1 = intersect(classes$class1 , WTSE_TGSE_up),
+                   intersect2 = intersect(classes$class2 , WTSE_TGSE_up),
+                   intersect3 = intersect(classes$class3 , WTSE_TGSE_up),
+                   intersect4 = intersect(classes$class4 , WTSE_TGSE_up),
+                   intersect5 = intersect(classes$class5 , WTSE_TGSE_up),
+                   intersect6 = intersect(classes$class6 , WTSE_TGSE_up),
+                   intersect7 = intersect(classes$class7 , WTSE_TGSE_up),
+                   intersect8 = intersect(classes$class8 , WTSE_TGSE_up),
+                   intersect9 = intersect(classes$class9 , WTSE_TGSE_up)
+                 )
+
+#microglial genes with H3K4me1 gain
+length(micro_genes_up <- intersectsUp$intersect5) #7 DB genes are microglial
+length(classes$class5) #287 total genes in the category
+#7/287 = 2% of the genes in class
+
+foldChanges = list(foldChanges1 = c(lengths(intersectsAll[1]) / (lengths(classes[1])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[1]) / (lengths(classes[1])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[1]) / (lengths(classes[1])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges2 = c(lengths(intersectsAll[2]) / (lengths(classes[2])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[2]) / (lengths(classes[2])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[2]) / (lengths(classes[2])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges3 = c(lengths(intersectsAll[3]) / (lengths(classes[3])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[3]) / (lengths(classes[3])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[3]) / (lengths(classes[3])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges4 = c(lengths(intersectsAll[4]) / (lengths(classes[4])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[4]) / (lengths(classes[4])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[4]) / (lengths(classes[4])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges5 = c(lengths(intersectsAll[5]) / (lengths(classes[5])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[5]) / (lengths(classes[5])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[5]) / (lengths(classes[5])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges6 = c(lengths(intersectsAll[6]) / (lengths(classes[6])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[6]) / (lengths(classes[6])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[6]) / (lengths(classes[6])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges7 = c(lengths(intersectsAll[7]) / (lengths(classes[7])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[7]) / (lengths(classes[7])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[7]) / (lengths(classes[7])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges8 = c(lengths(intersectsAll[8]) / (lengths(classes[8])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[8]) / (lengths(classes[8])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[8]) / (lengths(classes[8])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges9 = c(lengths(intersectsAll[9]) / (lengths(classes[9])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[9]) / (lengths(classes[9])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[9]) / (lengths(classes[9])/dim(linnarsson)[1] * length(WTSE_TGSE_up)))
+                  )
+
+
+# calculate p.values of the enrichments/depletions
+pVals = data.frame()
+
+# first row of p.values - all DBGs
+cache = list()
+for (i in 1:9){
+  fisherMatrix = matrix( c(lengths(intersectsAll[i]) , #DBGs in each cell type class
+                           lengths(classes[i]) - lengths(intersectsAll[i]), #notDBGs in each class
+                           length(WTSE_TGSE_hits) - lengths(intersectsAll[i]), #DBGs not in class
+                           dim(linnarsson)[1] - length(WTSE_TGSE_hits) - (lengths(classes[i]) - lengths(intersectsAll[i])) #notDBGs not in class
+                         ),
+                         nrow = 2,
+                         dimnames = list(DM = c("DBG", "notDBG"),
+                                         type = c("CellType", "notCellType")
+                                        )
+                         ) #
+  fisherRes = fisher.test(fisherMatrix , alternative = "two.sided")
+
+  cache = c(cache , fisherRes$p.value)
+}
+pVals = rbind(pVals , unlist(cache))
+
+# second row of p.values - down
+cache = list()
+for (i in 1:9){
+  fisherMatrix = matrix( c(lengths(intersectsDown[i]) , #DMGs in each cell type class
+                           lengths(classes[i]) - lengths(intersectsDown[i]), #notDMGs in each class
+                           length(WTSE_TGSE_down) - lengths(intersectsDown[i]), #DMGs not in class
+                           dim(linnarsson)[1] - length(WTSE_TGSE_down) - (lengths(classes[i]) - lengths(intersectsDown[i])) #notDMGs not in class
+                         ),
+                         nrow = 2,
+                         dimnames = list(DM = c("DBG", "notDBG"),
+                                         type = c("CellType", "notCellType")
+                                        )
+                         ) #matrix indicates that 10/128 DMGs contribute to cell types
+  fisherRes = fisher.test(fisherMatrix , alternative = "two.sided")
+
+  cache = c(cache , fisherRes$p.value)
+}
+pVals = rbind(pVals , unlist(cache))
+
+# third row of p.values - up
+cache = list()
+for (i in 1:9){
+  fisherMatrix = matrix( c(lengths(intersectsUp[i]) , #DMGs in each cell type class
+                           lengths(classes[i]) - lengths(intersectsUp[i]), #notDMGs in each class
+                           length(WTSE_TGSE_up) - lengths(intersectsUp[i]), #DMGs not in class
+                           dim(linnarsson)[1] - length(WTSE_TGSE_up) - (lengths(classes[i]) - lengths(intersectsUp[i])) #notDMGs not in class
+                         ),
+                         nrow = 2,
+                         dimnames = list(DM = c("DBG", "notDBG"),
+                                         type = c("CellType", "notCellType")
+                                        )
+                         ) #matrix indicates that 10/128 DMGs contribute to cell types
+  fisherRes = fisher.test(fisherMatrix , alternative = "two.sided")
+
+  cache = c(cache , fisherRes$p.value)
+}
+pVals = rbind(pVals , unlist(cache))
+
+
+# remove unwanted columns in p.values
+#leave these columns: "IntN" (1), "PyrN" (3),"Oligo" (4), "Micro" (5), "Astro" (7)
+pVals = pVals[ , c(1,3,4,5,7)]
+log10pVals = -log10(pVals)
+
+# remove unwanted cell types
+#leave these columns: "IntN" (1), "PyrN" (3),"Oligo" (4), "Micro" (5), "Astro" (7)
+foldChanges = foldChanges[ c(1,3,4,5,7) ]
+
+logFoldChanges = as.data.frame(lapply( foldChanges , log2 ))
+foldChanges = as.data.frame(foldChanges)
+
+# change sign of pVals when foldChange < 1
+# all foldChanges > 1, skip this part
+#for (i in 1:dim(log10pVals)[1]){
+#  for (j in 1:dim(log10pVals)[2]){
+#    if (foldChanges[i,j] < 1){
+#      log10pVals[i,j] = log10pVals[i,j] * -1
+#    }
+#  }
+#}
+
+labs = list()
+for (i in 1:dim(foldChanges)[1]){
+  cache = list()
+  for (j in 1:dim(foldChanges)[2]){
+    currFC = round(foldChanges[i,j] , digits = 2)
+    if (pVals[i,j] > 0.01){
+      currPV = round(pVals[i,j] , digits = 2)
+    }else{
+      currPV = format(pVals[i,j] , scientific = T , digits = 2)
+    }
+    cache = c(cache , paste(currFC ,
+                            paste("(", currPV,")",sep="") ,
+                            sep="\n")
+              )
+  }
+  labs = rbind(labs , cache)
+}
+
+#hmcols = colorRampPalette((brewer.pal(9, "Greys")[1:5]))(n = 149)
+hmcols = colorRampPalette(c("white", "gray60"))
+summary(log10pVals)
+colbreaks = c(seq(0 , 4.99 , length = 50),
+              seq(5, 9.99, length = 50),
+              seq(10 , 15 , length = 50))
+
+heatmap.2(as.matrix(log10pVals),
+          col = hmcols,
+          #breaks = colbreaks,
+          labRow = c("all" , "down" , "up"),
+          labCol = c("IntN" , "PyrN" ,"Oligo" , "Micro" , "Astro"),
+          
+          key = T,
+          keysize = 1,
+          trace = "none",
+          density.info = "none",
+          
+          Colv = NA,
+          Rowv = NA,
+          
+          cellnote = labs,
+          notecol = "black",
+          notecex = 1.5,
+          srtCol = 45,
+          cexRow = 1.5,
+          cexCol = 1.5
+         )
+```
+![Enrichment of cell type related genes in WTSE/TGSE hits](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/celltype_WTSE_TGSE.png)
+
+Pyramidal neuron genes have reduced H3K4me1 in TG mice.

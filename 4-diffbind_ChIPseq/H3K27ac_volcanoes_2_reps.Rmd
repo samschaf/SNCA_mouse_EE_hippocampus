@@ -1,0 +1,595 @@
+#Volcano plots for effect of TG in SE and EE on differential binding from H3K27ac analyses
+### Samantha Schaffner
+### Jan 24, 2022
+
+First, all the data will be read in.
+
+# H3K27ac
+```{r}
+H3K27ac_WTSE_TGEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/H3K27ac_WTSE-TGEE_allResults-2.csv")
+H3K27ac_WTSE_TGEE$coord <- paste(H3K27ac_WTSE_TGEE$seqnames, paste(H3K27ac_WTSE_TGEE$start, H3K27ac_WTSE_TGEE$end, sep="-"), sep=": ")
+
+H3K27ac_WTSE_TGSE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/H3K27ac_WTSE-TGSE_allResults-2.csv")
+H3K27ac_WTSE_TGSE$coord <- paste(H3K27ac_WTSE_TGSE$seqnames, paste(H3K27ac_WTSE_TGSE$start, H3K27ac_WTSE_TGSE$end, sep="-"), sep=": ")
+
+H3K27ac_WTEE_TGEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/H3K27ac_WTEE-TGEE_allResults-2.csv")
+H3K27ac_WTEE_TGEE$coord <- paste(H3K27ac_WTEE_TGEE$seqnames, paste(H3K27ac_WTEE_TGEE$start, H3K27ac_WTEE_TGEE$end, sep="-"), sep=": ")
+
+H3K27ac_TGSE_TGEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/H3K27ac_TGSE-TGEE_allResults-2.csv")
+H3K27ac_TGSE_TGEE$coord <- paste(H3K27ac_TGSE_TGEE$seqnames, paste(H3K27ac_TGSE_TGEE$start, H3K27ac_TGSE_TGEE$end, sep="-"), sep=": ")
+
+H3K27ac_WTSE_WTEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/H3K27ac_WTSE-WTEE_allResults-2.csv")
+H3K27ac_WTSE_WTEE$coord <- paste(H3K27ac_WTSE_WTEE$seqnames, paste(H3K27ac_WTSE_WTEE$start, H3K27ac_WTSE_WTEE$end, sep="-"), sep=": ")
+```
+
+## Annotating genes
+Using ChIPseeker (Zinah used this to annotate the files with differentially bound peaks previously).
+```{r}
+library(ChIPseeker)
+library(GenomicRanges)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library(org.Mm.eg.db)
+
+H3K27ac_WTSE_TGSE_gr <- GRanges(seqnames=H3K27ac_WTSE_TGSE$seqnames, ranges=IRanges(start=H3K27ac_WTSE_TGSE$start, end=H3K27ac_WTSE_TGSE$end))
+
+H3K27ac_WTSE_TGSE_anno <- as.data.frame(annotatePeak(H3K27ac_WTSE_TGSE_gr, TxDb=TxDb.Mmusculus.UCSC.mm10.knownGene, annoDb = "org.Mm.eg.db"))
+
+#checking all files have same peak list
+all.equal(H3K27ac_WTSE_TGSE$coord, H3K27ac_WTEE_TGEE$coord, H3K27ac_WTSE_WTEE$coord, H3K27ac_TGSE_TGEE$coord, H3K27ac_WTSE_TGEE$coord) #mismatched order
+H3K27ac_WTEE_TGEE <- H3K27ac_WTEE_TGEE[match(H3K27ac_WTSE_TGSE$coord, H3K27ac_WTEE_TGEE$coord),]
+H3K27ac_WTSE_TGEE <- H3K27ac_WTSE_TGEE[match(H3K27ac_WTSE_TGSE$coord, H3K27ac_WTSE_TGEE$coord),]
+H3K27ac_TGSE_TGEE <- H3K27ac_TGSE_TGEE[match(H3K27ac_WTSE_TGSE$coord, H3K27ac_TGSE_TGEE$coord),]
+H3K27ac_WTSE_WTEE <- H3K27ac_WTSE_WTEE[match(H3K27ac_WTSE_TGSE$coord, H3K27ac_WTSE_WTEE$coord),]
+all.equal(H3K27ac_WTSE_TGSE$coord, H3K27ac_WTEE_TGEE$coord, H3K27ac_WTSE_WTEE$coord, H3K27ac_TGSE_TGEE$coord, H3K27ac_WTSE_TGEE$coord) #TRUE
+
+#checking order of annotation and files
+all.equal(H3K27ac_WTSE_TGSE$seqnames, as.character(H3K27ac_WTSE_TGSE_anno$seqnames)) #TRUE
+all.equal(H3K27ac_WTSE_TGSE$start, H3K27ac_WTSE_TGSE_anno$start) #TRUE
+all.equal(H3K27ac_WTSE_TGSE$end, H3K27ac_WTSE_TGSE_anno$end) #TRUE
+
+#annotating all files
+H3K27ac_WTSE_TGSE <- cbind(H3K27ac_WTSE_TGSE, H3K27ac_WTSE_TGSE_anno[,6:17])
+H3K27ac_WTSE_WTEE <- cbind(H3K27ac_WTSE_WTEE, H3K27ac_WTSE_TGSE_anno[,6:17])
+H3K27ac_WTEE_TGEE <- cbind(H3K27ac_WTEE_TGEE, H3K27ac_WTSE_TGSE_anno[,6:17])
+H3K27ac_TGSE_TGEE <- cbind(H3K27ac_TGSE_TGEE, H3K27ac_WTSE_TGSE_anno[,6:17])
+H3K27ac_WTSE_TGEE <- cbind(H3K27ac_WTSE_TGEE, H3K27ac_WTSE_TGSE_anno[,6:17])
+
+#saving
+write.csv(H3K27ac_WTSE_TGSE, file="/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/H3K27ac_WTSE-TGSE_anno.csv", row.names=F)
+write.csv(H3K27ac_WTEE_TGEE, file="/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/H3K27ac_WTEE-TGEE_anno.csv", row.names=F)
+write.csv(H3K27ac_WTSE_WTEE, file="/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/H3K27ac_WTSE-WTEE_anno.csv", row.names=F)
+write.csv(H3K27ac_WTSE_TGEE, file="/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/H3K27ac_WTSE-TGEE_anno.csv", row.names=F)
+write.csv(H3K27ac_TGSE_TGEE, file="/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/H3K27ac_TGSE-TGEE_anno.csv", row.names=F)
+```
+
+## Plotting
+
+### H3K27ac WTSE/TGSE
+```{r}
+#removing Gulp1 (SNCA integration site)
+H3K27ac_WTSE_TGSE <- H3K27ac_WTSE_TGSE[-which(H3K27ac_WTSE_TGSE$FDR==min(H3K27ac_WTSE_TGSE$FDR)),]
+H3K27ac_WTEE_TGEE <- H3K27ac_WTEE_TGEE[-which(H3K27ac_WTEE_TGEE$FDR==min(H3K27ac_WTEE_TGEE$FDR)),]
+
+summary(as.factor(H3K27ac_WTSE_TGSE$threshold <- (H3K27ac_WTSE_TGSE$FDR<=0.05 & abs(H3K27ac_WTSE_TGSE$Fold)>=0.5))) #1152 hits
+H3K27ac_WTSE_TGSE$H3K27ac_change <- H3K27ac_WTSE_TGSE$threshold
+H3K27ac_WTSE_TGSE[H3K27ac_WTSE_TGSE$threshold==TRUE & H3K27ac_WTSE_TGSE$Fold>0,]$H3K27ac_change <- "Increase"
+H3K27ac_WTSE_TGSE[H3K27ac_WTSE_TGSE$threshold==TRUE & H3K27ac_WTSE_TGSE$Fold<0,]$H3K27ac_change <- "Decrease"
+H3K27ac_WTSE_TGSE[H3K27ac_WTSE_TGSE$threshold==FALSE,]$H3K27ac_change <- "NS"
+summary(as.factor(H3K27ac_WTSE_TGSE$H3K27ac_change))
+#Decrease Increase       NS 
+#     392      760    96083 
+
+summary(H3K27ac_WTSE_TGSE$Fold)
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#-4.14000 -0.18000  0.05000  0.06066  0.29000  4.60000 
+
+summary(-log10(H3K27ac_WTSE_TGSE$FDR))
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#0.00000 0.04528 0.13018 0.22749 0.29585 4.37366 
+
+summary(-log10(H3K27ac_WTEE_TGEE$FDR))
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#0.00000 0.04431 0.12033 0.21966 0.27901 4.62342 
+
+max(-log10(H3K27ac_WTSE_TGSE$p.value)) #9.060481
+max(-log10(H3K27ac_WTEE_TGEE$p.value)) #9.310691
+
+.libPaths(c(.libPaths(), "/mnt/scratch/KoborLab/R_Libs/4.2", "/mnt/scratch/KoborLab/Personal_Folders/sschaffner/Rstudio/R/x86_64-pc-linux-gnu-library/4.0/"))
+library(lifecycle, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(scales, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(vctrs, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+
+library(DescTools)
+H3K27ac_WTSE_TGSE$threshold <- as.factor(H3K27ac_WTSE_TGSE$threshold)
+H3K27ac_WTSE_TGSE$threshold <- reorder.factor(H3K27ac_WTSE_TGSE$threshold, new.order=c("TRUE","FALSE"))
+
+#grey
+library(ggplot2)
+ggplot(data=H3K27ac_WTSE_TGSE, aes(x=Fold, y=-log10(FDR), colour=threshold)) +
+  geom_point(size=1.75) +
+  labs(legend.position = "none") +
+  xlab("Fold Change") + ylab("-log10 adj P-Value") + theme_bw() + scale_color_manual(values=c("gray60", "gray87"), name="Category", labels=c("Significant", "Non-signficant")) + geom_hline(yintercept=-log10(0.05)) + xlim(c(-5,5)) + ylim(c(0,5)) + geom_vline(xintercept=-0.5) + geom_vline(xintercept=0.5)
+
+#grey
+library(ggplot2)
+library(ggrepel)
+
+max(H3K27ac_WTSE_TGSE[H3K27ac_WTSE_TGSE$threshold==TRUE,"p.value"]) #0.000607
+
+png("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/volcano_H3K27ac_SE_v3.png", width=305, height=335)
+ggplot(data=H3K27ac_WTSE_TGSE, aes(x=Fold, y=-log10(p.value), colour=threshold)) +
+  geom_point(size=1.75) +
+  xlab("log2 Fold Change") + ylab("-log10 P-Value") + theme_classic() + scale_color_manual(values=c("gray60", "gray87")) + geom_hline(yintercept=-log10(0.000607)) + xlim(c(-5,5)) + ylim(c(0,10)) + geom_vline(xintercept=-0.5) + geom_vline(xintercept=0.5) + geom_label_repel(data = H3K27ac_WTSE_TGSE[H3K27ac_WTSE_TGSE$threshold==TRUE,], aes(label = SYMBOL), size = 4, max.overlaps = 10, force=0.5, box.padding=0.06, max.time=4) + theme(legend.position = "none")
+dev.off()
+
+#gene ontology
+#WTSE_TGSE_H3K27ac <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_sig_only/H3K27ac/H3K27ac_WTSE-TGSE_cons-2_FDR0_05_FC0_5_annot.tsv")
+library(gprofiler2)
+gr_H3K27ac <- gost(query = H3K27ac_WTSE_TGSE[H3K27ac_WTSE_TGSE$threshold==TRUE,"SYMBOL"], organism = "mmusculus", ordered_query = FALSE, multi_query = FALSE, significant = TRUE, exclude_iea = FALSE, user_threshold = 0.05, correction_method = "fdr", domain_scope = "custom_annotated", custom_bg=H3K27ac_WTSE_TGSE$SYMBOL, sources = NULL, evcodes=TRUE)$result
+summary(as.factor(gr_H3K27ac$source))
+#GO:BP GO:CC GO:MF  KEGG MIRNA    TF 
+#  121    55    14     1     1    68 
+
+#plotting top 10 GO:BP terms
+GOBP <- gr_H3K27ac[gr_H3K27ac$source=="GO:BP",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+library(dplyr)
+GOBP <- GOBP %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOBP$term_name <- factor(GOBP$term_name, levels=GOBP$term_name)
+#Num terms on x-axis, coloured by adjP
+ggplot(GOBP[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 40)))  + scale_fill_continuous(low="gray48",high="gray87", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank(), axis.text.y=element_blank()) + ggtitle("Top 10 GO:BP terms")+ geom_text(label=GOBP$term_name[1:10], col="black", position=position_fill(0.1), hjust=0)
+
+#GO:MF
+GOMF <- gr_H3K27ac[gr_H3K27ac$source=="GO:MF",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+GOMF <- GOMF %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOMF$term_name <- factor(GOMF$term_name, levels=GOMF$term_name)
+ggplot(GOMF[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 40)))  + scale_fill_continuous(low="gray48",high="gray87", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("GO:MF")
+
+#GO:CC
+GOCC <- gr_H3K27ac[gr_H3K27ac$source=="GO:CC",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+GOCC <- GOCC %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOCC$term_name <- factor(GOCC$term_name, levels=GOCC$term_name)
+ggplot(GOCC[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 20)))  + scale_fill_continuous(low="gray48",high="gray87", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("GO:CC")
+
+#plotting top GO terms, coloured by source
+GO <- gr_H3K27ac[grep("GO", gr_H3K27ac$source),]
+GO <- GO %>% arrange(p_value)
+GO$term_name <- factor(GO$term_name, levels=GO$term_name)
+unique(GO$source[1:10])
+#[1] "GO:CC"
+
+ggplot(GO[1:10,], aes(x=term_name, y=-log10(p_value), fill=source)) + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + geom_hline(yintercept=-log10(0.05), linetype="dashed")
+```
+![H3K27ac volcano plot for WTSE/TGSE](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/volcano_H3K27ac_SE.png)
+
+![Top 10 GO:BP terms](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/GOBP_H3K27ac_SE.png)
+
+### H3K27ac WTEE/TGEE
+```{r}
+summary(as.factor(H3K27ac_WTEE_TGEE$threshold <- (H3K27ac_WTEE_TGEE$FDR<=0.05 & abs(H3K27ac_WTEE_TGEE$Fold)>=0.5))) #1191 hits
+H3K27ac_WTEE_TGEE$H3K27ac_change <- H3K27ac_WTEE_TGEE$threshold
+H3K27ac_WTEE_TGEE[H3K27ac_WTEE_TGEE$threshold==TRUE & H3K27ac_WTEE_TGEE$Fold>0,]$H3K27ac_change <- "Increase"
+H3K27ac_WTEE_TGEE[H3K27ac_WTEE_TGEE$threshold==TRUE & H3K27ac_WTEE_TGEE$Fold<0,]$H3K27ac_change <- "Decrease"
+H3K27ac_WTEE_TGEE[H3K27ac_WTEE_TGEE$threshold==FALSE,]$H3K27ac_change <- "NS"
+summary(as.factor(H3K27ac_WTEE_TGEE$H3K27ac_change))
+#Decrease Increase       NS 
+#     470      721    96044 
+
+summary(H3K27ac_WTEE_TGEE$Fold)
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#-3.99000 -0.20000  0.03000  0.04346  0.27000  4.12000 
+
+summary(-log10(H3K27ac_WTEE_TGEE$FDR))
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#0.00000 0.04431 0.12033 0.21966 0.27901 4.62342 
+ 
+H3K27ac_WTEE_TGEE$threshold <- as.factor(H3K27ac_WTEE_TGEE$threshold)
+H3K27ac_WTEE_TGEE$threshold <- reorder.factor(H3K27ac_WTEE_TGEE$threshold, new.order=c("TRUE","FALSE"))
+
+#green
+ggplot(data=H3K27ac_WTEE_TGEE, aes(x=Fold, y=-log10(FDR), colour=threshold)) +
+  geom_point(size=1.75) +
+  labs(legend.position = "none") +
+  xlab("Fold Change") + ylab("-log10 adj P-Value") + theme_bw() + scale_color_manual(values=c("palegreen3", "gray87"), name="Category", labels=c("Significant", "Non-signficant")) + geom_hline(yintercept=-log10(0.05)) + xlim(c(-5,5)) + ylim(c(0,5)) + geom_vline(xintercept=-0.5) + geom_vline(xintercept=0.5)
+
+max(H3K27ac_WTEE_TGEE[H3K27ac_WTEE_TGEE$threshold==TRUE,"p.value"]) #0.000623
+
+png("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/volcano_H3K27ac_EE_v3.png", width=305, height=335)
+ggplot(data=H3K27ac_WTEE_TGEE, aes(x=Fold, y=-log10(p.value), colour=threshold)) +
+  geom_point(size=1.75) +
+  xlab("log2 Fold Change") + ylab("-log10 P-Value") + theme_classic() + scale_color_manual(values=c("palegreen3", "gray87")) + geom_hline(yintercept=-log10(0.000623)) + xlim(c(-5,5)) + ylim(c(0,10)) + geom_vline(xintercept=-0.5) + geom_vline(xintercept=0.5) + geom_label_repel(data = H3K27ac_WTEE_TGEE[H3K27ac_WTEE_TGEE$threshold==TRUE,], aes(label = SYMBOL), size = 4, max.overlaps = 10, force=0.5, box.padding=0.06, max.time=4) + theme(legend.position = "none")
+dev.off()
+
+#overlap in differentially bound peaks between groups
+H3K27ac_WTEE_TGEE <- H3K27ac_WTEE_TGEE[match(H3K27ac_WTSE_TGSE$coord, H3K27ac_WTEE_TGEE$coord),]
+all.equal(H3K27ac_WTSE_TGSE$coord, H3K27ac_WTEE_TGEE$coord) #TRUE
+length(peaks_SE_EE <- H3K27ac_WTSE_TGSE[H3K27ac_WTSE_TGSE$threshold==TRUE & H3K27ac_WTEE_TGEE$threshold==TRUE,"coord"]) #160
+
+#gene ontology
+#WTEE_TGEE_H3K27ac <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_sig_only/H3K27ac/H3K27ac_WTEE-TGEE_cons-2_FDR0_05_FC0_5_annot.tsv")
+gr_H3K27ac <- gost(query = H3K27ac_WTEE_TGEE[H3K27ac_WTEE_TGEE$threshold==TRUE,"SYMBOL"], organism = "mmusculus", ordered_query = FALSE, multi_query = FALSE, significant = TRUE, exclude_iea = FALSE, user_threshold = 0.05, correction_method = "fdr", domain_scope = "custom_annotated", custom_bg=H3K27ac_WTEE_TGEE$SYMBOL, sources = NULL, evcodes=TRUE)$result
+summary(as.factor(gr_H3K27ac$source))
+#GO:BP GO:CC GO:MF    HP  KEGG  REAC    TF    WP 
+#  163    40    27     2    41     4    50     3 
+
+#plotting top 10 GO:BP terms
+GOBP <- gr_H3K27ac[gr_H3K27ac$source=="GO:BP",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+#library(dplyr)
+GOBP <- GOBP %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOBP$term_name <- factor(GOBP$term_name, levels=GOBP$term_name)
+#Num terms on x-axis, coloured by adjP
+#library(ggplot2)
+ggplot(GOBP[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 40)))  + scale_fill_continuous(low="palegreen4",high="palegreen2", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank(), axis.text.y=element_blank()) + ggtitle("Top 10 GO:BP terms")+ geom_text(label=GOBP$term_name[1:10], col="black", position=position_fill(0.1), hjust=0)
+
+#GO:MF
+GOMF <- gr_H3K27ac[gr_H3K27ac$source=="GO:MF",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+GOMF <- GOMF %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOMF$term_name <- factor(GOMF$term_name, levels=GOMF$term_name)
+ggplot(GOMF[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 40)))  + scale_fill_continuous(low="palegreen4",high="palegreen2", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("GO:MF")
+
+#GO:CC
+GOCC <- gr_H3K27ac[gr_H3K27ac$source=="GO:CC",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+GOCC <- GOCC %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOCC$term_name <- factor(GOCC$term_name, levels=GOCC$term_name)
+ggplot(GOCC[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 20)))  + scale_fill_continuous(low="palegreen4",high="palegreen2", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("GO:CC")
+
+#plotting top GO terms, coloured by source
+GO <- gr_H3K27ac[grep("GO", gr_H3K27ac$source),]
+GO <- GO %>% arrange(p_value)
+GO$term_name <- factor(GO$term_name, levels=GO$term_name)
+unique(GO$source[1:10])
+#[1] "GO:BP" "GO:CC"
+
+ggplot(GO[1:10,], aes(x=term_name, y=-log10(p_value), fill=source)) + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + geom_hline(yintercept=-log10(0.05), linetype="dashed")
+```
+![H3K27ac volcano plot for WTEE/TGEE](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/volcano_H3K27ac_EE.png)
+
+![Top 10 GO:BP terms](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/GOBP_H3K27ac_EE.png)
+
+## Overlap in differential binding
+```{r}
+H3K27ac_WTEE_TGEE <- H3K27ac_WTEE_TGEE[match(H3K27ac_WTSE_TGSE$coord, H3K27ac_WTEE_TGEE$coord),]
+all.equal(H3K27ac_WTSE_TGSE$coord, H3K27ac_WTEE_TGEE$coord)
+
+nrow(SE <- H3K27ac_WTSE_TGSE[H3K27ac_WTSE_TGSE$threshold==TRUE & H3K27ac_WTEE_TGEE$threshold==FALSE,])
+#992
+nrow(SE_EE <- H3K27ac_WTSE_TGSE[H3K27ac_WTSE_TGSE$threshold==TRUE & H3K27ac_WTEE_TGEE$threshold==TRUE,])
+#160
+nrow(EE <- H3K27ac_WTEE_TGEE[H3K27ac_WTEE_TGEE$threshold==TRUE & H3K27ac_WTSE_TGSE$threshold==FALSE,])
+#1031
+
+## Permuting group overlaps
+
+source('/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/5-methdiff_DNAm_DNAhm/overlap_permutation_2way.R')
+
+#WTSE/TGSE H3K27ac and WTEE/TGEE H3K27ac
+overlap_permutation_2way(H3K27ac_WTSE_TGSE[H3K27ac_WTSE_TGSE$FDR<=0.05 & abs(H3K27ac_WTSE_TGSE$Fold)>=0.5,"coord"], H3K27ac_WTEE_TGEE[H3K27ac_WTEE_TGEE$FDR<=0.05 & abs(H3K27ac_WTEE_TGEE$Fold)>=0.5,"coord"], Group1="WTSE_TGSE", Group2="WTEE_TGEE", background.probes = H3K27ac_WTSE_TGSE$coord, permutation_number=10000)
+#[1] "Permutation P values for enrichment and depletion"
+#[1] "Enrichment WTSE_TGSE-WTEE_TGEE: 0; Depletion WTSE_TGSE-WTEE_TGEE: 1"
+```
+
+## Gene ontology split by SE/EE status
+```{r}
+length(unique(H3K27ac_WTSE_TGSE$SYMBOL)) #16,859 genes measured
+
+#gene lists
+SE_genes <- H3K27ac_WTSE_TGSE[H3K27ac_WTSE_TGSE$threshold==TRUE,"SYMBOL"]
+EE_genes <- H3K27ac_WTEE_TGEE[H3K27ac_WTEE_TGEE$threshold==TRUE,"SYMBOL"]
+SE_EE_genes <- unique(SE_genes[SE_genes %in% EE_genes]) #296 genes
+SE_only_genes <- unique(SE_genes[-which(SE_genes %in% EE_genes)]) #728 genes
+EE_only_genes <- unique(EE_genes[-which(EE_genes %in% SE_genes)]) #767 genes
+#total of 1791 genes (10% of all genes measured!)
+
+gr_SE <- gost(query = SE_only_genes, organism = "mmusculus", ordered_query = FALSE, multi_query = FALSE, significant = TRUE, exclude_iea = FALSE, user_threshold = 0.05, correction_method = "fdr", domain_scope = "custom_annotated", custom_bg=H3K27ac_WTEE_TGEE$SYMBOL, sources = NULL, evcodes=TRUE)$result
+summary(as.factor(gr_SE$source))
+#GO:CC MIRNA    TF 
+#   14     1    15 
+
+#GO:CC
+GOCC <- gr_SE[gr_SE$source=="GO:CC",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+GOCC <- GOCC %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOCC$term_name <- factor(GOCC$term_name, levels=GOCC$term_name)
+ggplot(GOCC, aes(x=term_name, y=intersection_size, fill=round(p_value, 20)))  + scale_fill_continuous(low="gray48",high="gray87", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("GO:CC")
+
+gr_SE_EE <- gost(query = SE_EE_genes, organism = "mmusculus", ordered_query = FALSE, multi_query = FALSE, significant = TRUE, exclude_iea = FALSE, user_threshold = 0.05, correction_method = "fdr", domain_scope = "custom_annotated", custom_bg=H3K27ac_WTEE_TGEE$SYMBOL, sources = NULL, evcodes=TRUE)$result
+summary(as.factor(gr_SE_EE$source))
+#GO:BP GO:CC GO:MF  KEGG    TF    WP 
+#   37    46     5    40    13     3 
+
+#GO:CC
+GOCC <- gr_SE_EE[gr_SE_EE$source=="GO:CC",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+GOCC <- GOCC %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOCC$term_name <- factor(GOCC$term_name, levels=GOCC$term_name)
+ggplot(GOCC[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 20)))  + scale_fill_continuous(low="gray48",high="gray87", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("GO:CC")
+
+#GO:BP
+GOBP <- gr_SE_EE[gr_SE_EE$source=="GO:BP",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+GOBP <- GOBP %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOBP$term_name <- factor(GOBP$term_name, levels=GOBP$term_name)
+ggplot(GOBP[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 20)))  + scale_fill_continuous(low="gray48",high="gray87", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("GO:BP")
+
+#GO:MF
+GOMF <- gr_SE_EE[gr_SE_EE$source=="GO:MF",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+GOMF <- GOMF %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOMF$term_name <- factor(GOMF$term_name, levels=GOMF$term_name)
+ggplot(GOMF, aes(x=term_name, y=intersection_size, fill=round(p_value, 20)))  + scale_fill_continuous(low="gray48",high="gray87", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("GO:MF")
+
+#KEGG
+KEGG <- gr_SE_EE[gr_SE_EE$source=="KEGG",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+KEGG <- KEGG %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+KEGG$term_name <- factor(KEGG$term_name, levels=KEGG$term_name)
+ggplot(KEGG[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 20)))  + scale_fill_continuous(low="gray48",high="gray87", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("KEGG")
+
+gr_EE <- gost(query = EE_only_genes, organism = "mmusculus", ordered_query = FALSE, multi_query = FALSE, significant = TRUE, exclude_iea = FALSE, user_threshold = 0.05, correction_method = "fdr", domain_scope = "custom_annotated", custom_bg=H3K27ac_WTEE_TGEE$SYMBOL, sources = NULL, evcodes=TRUE)$result
+summary(as.factor(gr_EE$source))
+#GO:BP GO:CC    HP  KEGG 
+#   47     9     7     4 
+
+#GO:BP
+GOBP <- gr_EE[gr_EE$source=="GO:BP",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+GOBP <- GOBP %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOBP$term_name <- factor(GOBP$term_name, levels=GOBP$term_name)
+ggplot(GOBP[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 20)))  + scale_fill_continuous(low="palegreen4",high="palegreen2", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("GO:BP")
+
+#GO:CC
+GOCC <- gr_EE[gr_EE$source=="GO:CC",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+GOCC <- GOCC %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOCC$term_name <- factor(GOCC$term_name, levels=GOCC$term_name)
+ggplot(GOCC, aes(x=term_name, y=intersection_size, fill=round(p_value, 20)))  + scale_fill_continuous(low="palegreen4",high="palegreen2", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("GO:CC")
+
+#also KEGG "dopaminergic synpase" enriched
+
+save(gr_SE, gr_SE_EE, gr_EE, file="/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/gost_H3K27ac_SE_EE.RData")
+```
+
+#Checking for global H3K27ac differences
+
+##Checking normality of distribution
+```{r global H3K27ac, eval=F}
+library(moments)
+library(normtest)
+
+################# WTSE vs TGSE
+agostino.test(sample(H3K27ac_WTSE_TGSE$Fold, 46340))
+#	D'Agostino skewness test
+#
+#data:  sample(H3K27ac_WTSE_TGSE$Fold, 46340)
+#skew = 0.17322, z = 15.11328, p-value < 2.2e-16
+#alternative hypothesis: data have a skewness
+
+skewness.norm.test(H3K27ac_WTSE_TGSE$Fold, nrepl=1000)
+#	Skewness test for normality
+#
+#data:  H3K27ac_WTSE_TGSE$Fold
+#T = 0.18179, p-value < 2.2e-16
+
+################# WTEE vs TGEE
+agostino.test(sample(H3K27ac_WTEE_TGEE$Fold, 46340))
+#	D'Agostino skewness test
+#
+#data:  sample(H3K27ac_WTEE_TGEE$Fold, 46340)
+#skew = 0.22105, z = 19.19970, p-value < 2.2e-16
+#alternative hypothesis: data have a skewness
+
+skewness.norm.test(H3K27ac_WTEE_TGEE$Fold, nrepl=1000)
+#	Skewness test for normality
+#
+#data:  H3K27ac_WTEE_TGEE$Fold
+#T = 0.24945, p-value < 2.2e-16
+
+################# TGEE vs TGSE
+agostino.test(sample(H3K27ac_TGSE_TGEE$Fold, 46340))
+#	D'Agostino skewness test
+#
+#data:  sample(H3K27ac_TGSE_TGEE$Fold, 46340)
+#skew = 0.080256, z = 7.042975, p-value = 1.882e-12
+#alternative hypothesis: data have a skewness
+
+skewness.norm.test(H3K27ac_TGSE_TGEE$Fold, nrepl=1000)
+#	Skewness test for normality
+#
+#data:  H3K27ac_TGSE_TGEE$Fold
+#T = 0.067103, p-value < 2.2e-16
+
+################# WTEE vs WTSE
+agostino.test(sample(H3K27ac_WTSE_WTEE$Fold, 46340))
+#	D'Agostino skewness test
+#
+#data:  sample(H3K27ac_WTSE_WTEE$Fold, 46340)
+#skew = 0.0095415, z = 0.8386491, p-value = 0.4017
+#alternative hypothesis: data have a skewness
+
+skewness.norm.test(H3K27ac_WTSE_WTEE$Fold, nrepl=1000)
+#	Skewness test for normality
+#
+#data:  H3K27ac_WTSE_WTEE$Fold
+#T = -0.011615, p-value = 0.154
+
+H3K27ac <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/conc_H3K27ac_2.csv")
+
+#calculate mean H3K27ac levels across groups for each site
+H3K27ac$WTSE_mean <- rowMeans(H3K27ac[,3:6])
+H3K27ac$WTEE_mean <- rowMeans(H3K27ac[,11:14])
+H3K27ac$TGSE_mean <- rowMeans(H3K27ac[,7:10])
+H3K27ac$TGEE_mean <- rowMeans(H3K27ac[,15:18])
+```
+
+
+##Wilcoxin test
+```{r wilcox test, eval=F}
+#WTSE vs TGSE
+wilcox.test(H3K27ac$WTSE_mean, H3K27ac$TGSE_mean)$p.value #3.024809e-18
+summary(H3K27ac$TGSE_mean - H3K27ac$WTSE_mean)
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#-150.678   -3.309    1.235    2.073    6.235  241.048 
+    
+#WTEE vs TGEE
+wilcox.test(H3K27ac$WTEE_mean, H3K27ac$TGEE_mean)$p.value #3.339762e-12
+summary(H3K27ac$TGEE_mean - H3K27ac$WTEE_mean)
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#-89.2600  -4.2425   0.5975   0.5783   5.3175 153.6275 
+    
+#WTEE vs TGSE
+wilcox.test(H3K27ac$WTEE_mean, H3K27ac$TGSE_mean)$p.value #0.004031073
+summary(H3K27ac$TGSE_mean - H3K27ac$WTEE_mean)
+#     Min.   1st Qu.    Median      Mean   3rd Qu.      Max. 
+#-142.9025   -4.1425    0.3400    0.4994    4.8675  139.8275 
+
+#WTSE vs WTEE
+wilcox.test(H3K27ac$WTSE_mean, H3K27ac$WTEE_mean)$p.value #7.082184e-09
+summary(H3K27ac$WTEE_mean - H3K27ac$WTSE_mean)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#-54.975  -2.450   0.850   1.574   4.565 191.593 
+
+#WTSE vs TGEE
+wilcox.test(H3K27ac$WTSE_mean, H3K27ac$TGEE_mean)$p.value #5.865315e-38
+summary(H3K27ac$TGEE_mean - H3K27ac$WTSE_mean)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#-97.035  -3.475   1.535   2.152   6.737 194.950 
+
+#TGSE vs TGEE
+wilcox.test(H3K27ac$TGSE_mean, H3K27ac$TGEE_mean)$p.value #4.104256e-05
+summary(H3K27ac$TGEE_mean - H3K27ac$TGSE_mean)
+#      Min.    1st Qu.     Median       Mean    3rd Qu.       Max. 
+#-155.32000   -3.33000    0.29000    0.07898    3.74750   79.82750 
+     
+#plotting
+H3K27ac_melt$group <- NA
+H3K27ac_melt[grep("WTSE", H3K27ac_melt$variable),"group"] <- "WTSE"
+H3K27ac_melt[grep("TGSE", H3K27ac_melt$variable),"group"] <- "TGSE"
+H3K27ac_melt[grep("WTEE", H3K27ac_melt$variable),"group"] <- "WTEE"
+H3K27ac_melt[grep("TGEE", H3K27ac_melt$variable),"group"] <- "TGEE"
+
+H3K27ac_melt$group <- as.factor(H3K27ac_melt$group)
+H3K27ac_melt$group <- reorder.factor(H3K27ac_melt$group, new.order=c("WTSE","TGSE","WTEE","TGEE"))
+
+ggplot(H3K27ac_melt, aes(x=group, y=value, col=group)) + geom_boxplot() + theme_classic() + scale_color_manual(values=c("black","plum3","gray60","palegreen3"))
+
+#Kruskal-Wallis test with pairwise Wilcoxin
+H3K27ac_melt$group <- as.factor(H3K27ac_melt$group)
+kw <- kruskal.test(value ~ group, data=H3K27ac_melt)
+#	Kruskal-Wallis rank sum test
+#
+#data:  value by group
+#Kruskal-Wallis chi-squared = 606.68, df = 3, p-value < 2.2e-16
+pairwise.wilcox.test(H3K27ac_melt$value, H3K27ac_melt$group,
+                 p.adjust.method = "BH")
+
+#     WTSE    TGSE    WTEE   
+#TGSE < 2e-16 -       -      
+#WTEE < 2e-16 2.3e-07 -      
+#TGEE < 2e-16 3.7e-10 < 2e-16
+```
+![H3K27ac levels across groups](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/boxplots.png)
+
+![H3K27ac levels across groups (conc < 100)](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/boxplots_conc<100.png)
+
+# heat map of H3K27ac levels in each category and each environment
+```{r}
+H3K27ac_conc <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/conc_H3K27ac_2.csv")
+H3K27ac_TGEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K27ac/H3K27ac_TGSE-TGEE_anno.csv")
+H3K27ac_TGEE <- H3K27ac_TGEE[H3K27ac_TGEE$coord %in% H3K27ac_conc$coord,]
+H3K27ac_conc <- H3K27ac_conc[match(H3K27ac_TGEE$coord, H3K27ac_conc$coord),]
+H3K27ac_scaled <- as.data.frame(t(apply(H3K27ac_conc[,3:ncol(H3K27ac_conc)], 1, function(x) scale(x))))
+colnames(H3K27ac_scaled) <- colnames(H3K27ac_conc[,3:ncol(H3K27ac_conc)])
+H3K27ac_scaled$rowmean <- rowMeans(H3K27ac_scaled)
+H3K27ac_scaled$coord <- H3K27ac_conc$coord
+all.equal(H3K27ac_scaled$coord, H3K27ac_TGEE$coord) #TRUE
+H3K27ac_scaled$Gene <- H3K27ac_TGEE$SYMBOL
+
+H3K27ac_scaled <- H3K27ac_scaled[H3K27ac_scaled$coord %in% H3K27ac_WTSE_TGSE[H3K27ac_WTSE_TGSE$threshold==TRUE,"coord"],]
+
+#checking how many genes have loss of H3K27ac in TGSE which is restored in TGEE
+#even though these are differentially bound in both environments, we might still see this pattern
+
+H3K27ac_scaled$mean_WTSE <- rowMeans(H3K27ac_scaled[,1:4])
+H3K27ac_scaled$mean_TGSE <- rowMeans(H3K27ac_scaled[,5:8])
+H3K27ac_scaled$mean_WTEE <- rowMeans(H3K27ac_scaled[,9:12])
+H3K27ac_scaled$mean_TGEE <- rowMeans(H3K27ac_scaled[,13:16])
+
+library(reshape2)
+library(DescTools)
+library(RColorBrewer)
+H3K27ac_scaled <- H3K27ac_scaled[order(H3K27ac_scaled$mean_TGSE),]
+K27ac_melt <- melt(H3K27ac_scaled[,17:23], id.vars=c("coord","Gene","rowmean"))
+K27ac_melt$group <- substr(K27ac_melt$variable, 6, 9)
+K27ac_melt$group <- as.factor(K27ac_melt$group)
+K27ac_melt$group <- reorder.factor(K27ac_melt$group, new.order=c("WTSE","TGSE","WTEE","TGEE"))
+K27ac_melt$coord <- factor(K27ac_melt$coord, levels=unique(K27ac_melt$coord))
+
+limit <- max(abs(K27ac_melt$value))*c(-1,1)
+
+ggplot(K27ac_melt, aes(x=group, y=coord, fill=value)) + geom_tile() + theme_bw() + theme(axis.title.y=element_blank(), axis.title.x=element_blank(), axis.text.y=element_blank(), axis.text.x=element_text(angle=90, hjust=1), plot.title=element_text(hjust=0.5, vjust=1, size=12), axis.ticks.y=element_blank(), plot.subtitle = element_text(hjust=0.5, size=10)) + scale_fill_distiller(palette="RdBu", direction=1, limit=limit, name="Row\nZ-score")
+
+#heat map (Z scores)
+library(gplots)
+library(pvclust)
+
+H3K27ac_mat <- as.matrix(H3K27ac_scaled[,1:16])
+clust <- pvclust(H3K27ac_mat)
+plot(clust)
+
+RdBu_pal2 <- brewer_pal(palette=5, type="div", direction=-1)
+heatmap.2(H3K27ac_mat, col=RdBu_pal2(9), trace="none", Colv=as.dendrogram(clust$hclust))
+
+#EE-only
+H3K27ac_scaled <- as.data.frame(t(apply(H3K27ac_conc[,3:ncol(H3K27ac_conc)], 1, function(x) scale(x))))
+colnames(H3K27ac_scaled) <- colnames(H3K27ac_conc[,3:ncol(H3K27ac_conc)])
+H3K27ac_scaled$rowmean <- rowMeans(H3K27ac_scaled)
+H3K27ac_scaled$coord <- H3K27ac_conc$coord
+all.equal(H3K27ac_scaled$coord, H3K27ac_TGEE$coord) #TRUE
+H3K27ac_scaled$Gene <- H3K27ac_TGEE$SYMBOL
+
+H3K27ac_scaled <- H3K27ac_scaled[H3K27ac_scaled$coord %in% H3K27ac_WTEE_TGEE[H3K27ac_WTEE_TGEE$threshold==TRUE,"coord"],]
+
+H3K27ac_scaled$mean_WTSE <- rowMeans(H3K27ac_scaled[,1:4])
+H3K27ac_scaled$mean_TGSE <- rowMeans(H3K27ac_scaled[,5:8])
+H3K27ac_scaled$mean_WTEE <- rowMeans(H3K27ac_scaled[,9:12])
+H3K27ac_scaled$mean_TGEE <- rowMeans(H3K27ac_scaled[,13:16])
+
+H3K27ac_scaled <- H3K27ac_scaled[order(H3K27ac_scaled$mean_TGEE),]
+K27ac_melt <- melt(H3K27ac_scaled[,17:23], id.vars=c("coord","Gene","rowmean"))
+K27ac_melt$group <- substr(K27ac_melt$variable, 6, 9)
+K27ac_melt$group <- as.factor(K27ac_melt$group)
+K27ac_melt$group <- reorder.factor(K27ac_melt$group, new.order=c("WTSE","TGSE","WTEE","TGEE"))
+K27ac_melt$coord <- factor(K27ac_melt$coord, levels=unique(K27ac_melt$coord))
+
+limit <- max(abs(K27ac_melt$value))*c(-1,1)
+
+ggplot(K27ac_melt, aes(x=group, y=coord, fill=value)) + geom_tile() + theme_bw() + theme(axis.title.y=element_blank(), axis.title.x=element_blank(), axis.text.y=element_blank(), axis.text.x=element_text(angle=90, hjust=1), plot.title=element_text(hjust=0.5, vjust=1, size=12), axis.ticks.y=element_blank(), plot.subtitle = element_text(hjust=0.5, size=10)) + scale_fill_distiller(palette="RdBu", direction=1, limit=limit, name="Row\nZ-score")
+
+#heat map (Z scores)
+H3K27ac_mat <- as.matrix(H3K27ac_scaled[,1:16])
+clust <- pvclust(H3K27ac_mat)
+plot(clust)
+
+RdBu_pal2 <- brewer_pal(palette=5, type="div", direction=-1)
+heatmap.2(H3K27ac_mat, col=RdBu_pal2(9), trace="none", Colv=as.dendrogram(clust$hclust))
+```

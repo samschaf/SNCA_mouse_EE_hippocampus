@@ -1,0 +1,552 @@
+#Volcano plots for effect of TG in SE and EE on differential binding from H3K4me1 analyses
+### Samantha Schaffner
+### Jan 11, 2022
+
+First, all the data will be read in.
+
+# H3K4me1
+```{r}
+H3K4me1_WTSE_TGEE <- read.csv("~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_WTSE-TGEE_allResults-2.csv")
+H3K4me1_WTSE_TGEE$coord <- paste(H3K4me1_WTSE_TGEE$seqnames, paste(H3K4me1_WTSE_TGEE$start, H3K4me1_WTSE_TGEE$end, sep="-"), sep=": ")
+
+H3K4me1_WTSE_TGSE <- read.csv("~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_WTSE-TGSE_allResults-2.csv")
+H3K4me1_WTSE_TGSE$coord <- paste(H3K4me1_WTSE_TGSE$seqnames, paste(H3K4me1_WTSE_TGSE$start, H3K4me1_WTSE_TGSE$end, sep="-"), sep=": ")
+
+H3K4me1_WTEE_TGEE <- read.csv("~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_WTEE-TGEE_allResults-2.csv")
+H3K4me1_WTEE_TGEE$coord <- paste(H3K4me1_WTEE_TGEE$seqnames, paste(H3K4me1_WTEE_TGEE$start, H3K4me1_WTEE_TGEE$end, sep="-"), sep=": ")
+
+H3K4me1_TGSE_TGEE <- read.csv("~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_TGSE-TGEE_allResults-2.csv")
+H3K4me1_TGSE_TGEE$coord <- paste(H3K4me1_TGSE_TGEE$seqnames, paste(H3K4me1_TGSE_TGEE$start, H3K4me1_TGSE_TGEE$end, sep="-"), sep=": ")
+
+H3K4me1_WTSE_WTEE <- read.csv("~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_WTSE-WTEE_allResults-2.csv")
+H3K4me1_WTSE_WTEE$coord <- paste(H3K4me1_WTSE_WTEE$seqnames, paste(H3K4me1_WTSE_WTEE$start, H3K4me1_WTSE_WTEE$end, sep="-"), sep=": ")
+```
+
+## Annotating genes
+Using ChIPseeker (Zinah used this to annotate the files with differentially bound peaks previously).
+```{r}
+library(ChIPseeker)
+library(GenomicRanges)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library(org.Mm.eg.db)
+
+H3K4me1_WTSE_TGSE_gr <- GRanges(seqnames=H3K4me1_WTSE_TGSE$seqnames, ranges=IRanges(start=H3K4me1_WTSE_TGSE$start, end=H3K4me1_WTSE_TGSE$end))
+
+H3K4me1_WTSE_TGSE_anno <- as.data.frame(annotatePeak(H3K4me1_WTSE_TGSE_gr, TxDb=TxDb.Mmusculus.UCSC.mm10.knownGene, annoDb = "org.Mm.eg.db", tssRegion=c(-2000,2000)))
+
+#checking all files have same peak list
+all.equal(H3K4me1_WTSE_TGSE$coord, H3K4me1_WTEE_TGEE$coord, H3K4me1_WTSE_WTEE$coord, H3K4me1_TGSE_TGEE$coord, H3K4me1_WTSE_TGEE$coord) #mismatched order
+H3K4me1_WTEE_TGEE <- H3K4me1_WTEE_TGEE[match(H3K4me1_WTSE_TGSE$coord, H3K4me1_WTEE_TGEE$coord),]
+H3K4me1_WTSE_TGEE <- H3K4me1_WTSE_TGEE[match(H3K4me1_WTSE_TGSE$coord, H3K4me1_WTSE_TGEE$coord),]
+H3K4me1_TGSE_TGEE <- H3K4me1_TGSE_TGEE[match(H3K4me1_WTSE_TGSE$coord, H3K4me1_TGSE_TGEE$coord),]
+H3K4me1_WTSE_WTEE <- H3K4me1_WTSE_WTEE[match(H3K4me1_WTSE_TGSE$coord, H3K4me1_WTSE_WTEE$coord),]
+all.equal(H3K4me1_WTSE_TGSE$coord, H3K4me1_WTEE_TGEE$coord, H3K4me1_WTSE_WTEE$coord, H3K4me1_TGSE_TGEE$coord, H3K4me1_WTSE_TGEE$coord) #TRUE
+
+#checking order of annotation and files
+all.equal(H3K4me1_WTSE_TGSE$seqnames, as.character(H3K4me1_WTSE_TGSE_anno$seqnames)) #TRUE
+all.equal(H3K4me1_WTSE_TGSE$start, H3K4me1_WTSE_TGSE_anno$start) #TRUE
+all.equal(H3K4me1_WTSE_TGSE$end, H3K4me1_WTSE_TGSE_anno$end) #TRUE
+
+#annotating all files
+H3K4me1_WTSE_TGSE <- cbind(H3K4me1_WTSE_TGSE, H3K4me1_WTSE_TGSE_anno[,6:17])
+H3K4me1_WTSE_WTEE <- cbind(H3K4me1_WTSE_WTEE, H3K4me1_WTSE_TGSE_anno[,6:17])
+H3K4me1_WTEE_TGEE <- cbind(H3K4me1_WTEE_TGEE, H3K4me1_WTSE_TGSE_anno[,6:17])
+H3K4me1_TGSE_TGEE <- cbind(H3K4me1_TGSE_TGEE, H3K4me1_WTSE_TGSE_anno[,6:17])
+H3K4me1_WTSE_TGEE <- cbind(H3K4me1_WTSE_TGEE, H3K4me1_WTSE_TGSE_anno[,6:17])
+
+#saving
+write.csv(H3K4me1_WTSE_TGSE, file="~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_WTSE-TGSE_anno.csv", row.names=F)
+write.csv(H3K4me1_WTEE_TGEE, file="~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_WTEE-TGEE_anno.csv", row.names=F)
+write.csv(H3K4me1_WTSE_WTEE, file="~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_WTSE-WTEE_anno.csv", row.names=F)
+write.csv(H3K4me1_WTSE_TGEE, file="~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_WTSE-TGEE_anno.csv", row.names=F)
+write.csv(H3K4me1_TGSE_TGEE, file="~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_TGSE-TGEE_anno.csv", row.names=F)
+```
+
+
+## Plotting
+
+### H3K4me1 WTSE/TGSE
+```{r}
+#removing Gulp1 (SNCA integration site)
+H3K4me1_WTSE_TGSE <- H3K4me1_WTSE_TGSE[-which(H3K4me1_WTSE_TGSE$FDR==min(H3K4me1_WTSE_TGSE$FDR)),]
+H3K4me1_WTEE_TGEE <- H3K4me1_WTEE_TGEE[-which(H3K4me1_WTEE_TGEE$FDR==min(H3K4me1_WTEE_TGEE$FDR)),]
+
+summary(as.factor(H3K4me1_WTSE_TGSE$threshold <- (H3K4me1_WTSE_TGSE$FDR<=0.05 & abs(H3K4me1_WTSE_TGSE$Fold)>=0.5))) #4641 hits
+H3K4me1_WTSE_TGSE$H3K4me1_change <- H3K4me1_WTSE_TGSE$threshold
+H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$threshold==TRUE & H3K4me1_WTSE_TGSE$Fold>0,]$H3K4me1_change <- "Increase"
+H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$threshold==TRUE & H3K4me1_WTSE_TGSE$Fold<0,]$H3K4me1_change <- "Decrease"
+H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$threshold==FALSE,]$H3K4me1_change <- "NS"
+summary(as.factor(H3K4me1_WTSE_TGSE$H3K4me1_change)) #3878 with dcr H3K4me1, 763 with incr H3K4me1
+#save(H3K4me1_WTSE_TGSE, file="~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/methdiff/methylation/BiSeq_site_specific/WTSE_TGSE/BH/H3K4me1_WTSE_TGSE_WTSE_TGSE_BH.RData")
+
+summary(H3K4me1_WTSE_TGSE$Fold)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#-4.6500 -0.3900 -0.1300 -0.1431  0.1200  4.4200
+
+summary(-log10(H3K4me1_WTSE_TGSE$FDR))
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#0.00000 0.07263 0.20516 0.35612 0.46852 7.25259 
+
+summary(-log10(H3K4me1_WTEE_TGEE$FDR))
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#0.00000 0.07469 0.20551 0.36430 0.47756 7.78252 
+
+max(-log10(H3K4me1_WTSE_TGSE$p.value)) #12
+max(H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$threshold==TRUE,"p.value"]) #0.00212
+max(-log10(H3K4me1_WTEE_TGEE$p.value)) #12.5
+
+.libPaths(c(.libPaths(), "/mnt/scratch/KoborLab/R_Libs/4.2", "/mnt/scratch/KoborLab/Personal_Folders/sschaffner/Rstudio/R/x86_64-pc-linux-gnu-library/4.0/"))
+library(lifecycle, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(scales, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(vctrs, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(DescTools)
+H3K4me1_WTSE_TGSE$threshold <- as.factor(H3K4me1_WTSE_TGSE$threshold)
+H3K4me1_WTSE_TGSE$threshold <- reorder.factor(H3K4me1_WTSE_TGSE$threshold, new.order=c("TRUE","FALSE"))
+
+#grey
+library(ggplot2)
+library(ggrepel)
+png("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/volcano_H3K4me1_SE_v3.png", width=305, height=335)
+ggplot(data=H3K4me1_WTSE_TGSE, aes(x=Fold, y=-log10(p.value), colour=threshold)) +
+  geom_point(size=1.75) +
+  xlab("log2 Fold Change") + ylab("-log10 P-Value") + theme_classic() + scale_color_manual(values=c("gray60", "gray87")) + geom_hline(yintercept=-log10(0.00212)) + xlim(c(-5,5)) + ylim(c(0,13)) + geom_vline(xintercept=-0.5) + geom_vline(xintercept=0.5) + geom_label_repel(data = H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$threshold==TRUE,], aes(label = SYMBOL), size = 4, max.overlaps = 10, force=0.5, box.padding=0.06, max.time=4) + theme(legend.position = "none")
+dev.off()
+
+#gene ontology
+#WTSE_TGSE_H3K4me1 <- read.delim("~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_sig_only/H3K4me1/H3K4me1_WTSE-TGSE_cons-2_FDR0_05_FC0_5_annot.tsv")
+
+library(gprofiler2)
+gr_H3K4me1 <- gost(query = H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$threshold==TRUE,"SYMBOL"], organism = "mmusculus", ordered_query = FALSE, multi_query = FALSE, significant = TRUE, exclude_iea = FALSE, user_threshold = 0.05, correction_method = "fdr", domain_scope = "custom_annotated", custom_bg=H3K4me1_WTSE_TGSE$SYMBOL,sources = NULL, evcodes=TRUE)$result
+summary(as.factor(gr_H3K4me1$source))
+#GO:BP GO:CC GO:MF    HP  KEGG MIRNA  REAC    TF    WP 
+#  395    80    50     4    63     5     7   313    17 
+
+#plotting top 10 GO:BP terms
+GOBP <- gr_H3K4me1[gr_H3K4me1$source=="GO:BP",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+library(dplyr)
+GOBP <- GOBP %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOBP$term_name <- factor(GOBP$term_name, levels=GOBP$term_name)
+#Num terms on x-axis, coloured by adjP
+ggplot(GOBP[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 40)))  + scale_fill_continuous(low="gray48",high="gray87", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank(), axis.text.y=element_blank()) + ggtitle("Top 10 GO:BP terms")+ geom_text(label=GOBP$term_name[1:10], col="black", position=position_fill(0.1), hjust=0)
+
+#GO:MF
+GOMF <- gr_H3K4me1[gr_H3K4me1$source=="GO:MF",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+GOMF <- GOMF %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOMF$term_name <- factor(GOMF$term_name, levels=GOMF$term_name)
+ggplot(GOMF[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 40)))  + scale_fill_continuous(low="gray48",high="gray87", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("GO:MF")
+
+#GO:CC
+GOCC <- gr_H3K4me1[gr_H3K4me1$source=="GO:CC",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+GOCC <- GOCC %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOCC$term_name <- factor(GOCC$term_name, levels=GOCC$term_name)
+ggplot(GOCC[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 20)))  + scale_fill_continuous(low="gray48",high="gray87", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("GO:CC")
+
+#plotting top GO terms, coloured by source
+GO <- gr_H3K4me1[grep("GO", gr_H3K4me1$source),]
+GO <- GO %>% arrange(p_value)
+GO$term_name <- factor(GO$term_name, levels=GO$term_name)
+unique(GO$source[1:10])
+#[1] "GO:BP" "GO:CC"
+
+ggplot(GO[1:10,], aes(x=term_name, y=-log10(p_value), fill=source)) + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + geom_hline(yintercept=-log10(0.05), linetype="dashed")
+```
+![H3K4me1 volcano plot for WTSE/TGSE](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/volcano_H3K4me1_SE.png)
+
+![Top 10 GO terms](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/GO_H3K4me1_SE.png)
+
+### H3K4me1 WTEE/TGEE
+```{r}
+summary(as.factor(H3K4me1_WTEE_TGEE$threshold <- (H3K4me1_WTEE_TGEE$FDR<=0.05 & abs(H3K4me1_WTEE_TGEE$Fold)>=0.5))) #5003 hits
+H3K4me1_WTEE_TGEE$H3K4me1_change <- H3K4me1_WTEE_TGEE$threshold
+H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$threshold==TRUE & H3K4me1_WTEE_TGEE$Fold>0,]$H3K4me1_change <- "Increase"
+H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$threshold==TRUE & H3K4me1_WTEE_TGEE$Fold<0,]$H3K4me1_change <- "Decrease"
+H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$threshold==FALSE,]$H3K4me1_change <- "NS"
+summary(as.factor(H3K4me1_WTEE_TGEE$H3K4me1_change)) #3346 with dcr H3K4me1, 1657 with incr H3K4me1
+#save(H3K4me1_WTEE_TGEE, file="~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/methdiff/methylation/BiSeq_site_specific/WTEE_TGEE/BH/H3K4me1_WTEE_TGEE_WTEE_TGEE_BH.RData")
+
+summary(H3K4me1_WTEE_TGEE$Fold)
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#-4.61000 -0.33000 -0.07000 -0.08201  0.18000  4.44000 
+
+summary(-log10(H3K4me1_WTEE_TGEE$FDR))
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#0.00000 0.07469 0.20551 0.36430 0.47756 7.78252 
+ 
+#library(DescTools)
+H3K4me1_WTEE_TGEE$threshold <- as.factor(H3K4me1_WTEE_TGEE$threshold)
+H3K4me1_WTEE_TGEE$threshold <- reorder.factor(H3K4me1_WTEE_TGEE$threshold, new.order=c("TRUE","FALSE"))
+
+max(H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$threshold==TRUE,"p.value"])
+
+#green
+png("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/volcano_H3K4me1_EE_v3.png", width=305, height=335)
+ggplot(data=H3K4me1_WTEE_TGEE, aes(x=Fold, y=-log10(p.value), colour=threshold)) +
+  geom_point(size=1.75) +
+  xlab("log2 Fold Change") + ylab("-log10 P-Value") + theme_classic() + scale_color_manual(values=c("palegreen3", "gray87")) + geom_hline(yintercept=-log10(0.00226)) + xlim(c(-5,5)) + ylim(c(0,13)) + geom_vline(xintercept=-0.5) + geom_vline(xintercept=0.5) + geom_label_repel(data = H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$threshold==TRUE,], aes(label = SYMBOL), size = 4, max.overlaps = 10, force=0.5, box.padding=0.06, max.time=4) + theme(legend.position = "none")
+dev.off()
+
+#overlap in differentially bound peaks between groups
+H3K4me1_WTEE_TGEE <- H3K4me1_WTEE_TGEE[match(H3K4me1_WTSE_TGSE$coord, H3K4me1_WTEE_TGEE$coord),]
+all.equal(H3K4me1_WTSE_TGSE$coord, H3K4me1_WTEE_TGEE$coord) #TRUE
+length(peaks_SE_EE <- H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$threshold==TRUE & H3K4me1_WTEE_TGEE$threshold==TRUE,"coord"]) #1,222
+
+#gene ontology
+#WTEE_TGEE_H3K4me1 <- read.delim("~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_sig_only/H3K4me1/H3K4me1_WTEE-TGEE_cons-2_FDR0_05_FC0_5_annot.tsv")
+gr_H3K4me1 <- gost(query = H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$threshold==TRUE,"SYMBOL"], organism = "mmusculus", ordered_query = FALSE, multi_query = FALSE, significant = TRUE, exclude_iea = FALSE, user_threshold = 0.05, correction_method = "fdr", domain_scope = "custom_annotated", custom_bg=H3K4me1_WTEE_TGEE$SYMBOL, sources = NULL, evcodes=TRUE)$result
+summary(as.factor(gr_H3K4me1$source))
+#GO:BP GO:CC GO:MF    HP  KEGG MIRNA  REAC    TF    WP 
+#  391    96    54     3    49    10     1   289    10 
+
+#plotting top 10 GO:BP terms
+GOBP <- gr_H3K4me1[gr_H3K4me1$source=="GO:BP",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+#library(dplyr)
+GOBP <- GOBP %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOBP$term_name <- factor(GOBP$term_name, levels=GOBP$term_name)
+#Num terms on x-axis, coloured by adjP
+#library(ggplot2)
+ggplot(GOBP[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 40)))  + scale_fill_continuous(low="palegreen4",high="palegreen2", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank(), axis.text.y=element_blank()) + ggtitle("Top 10 GO:BP terms")+ geom_text(label=GOBP$term_name[1:10], col="black", position=position_fill(0.1), hjust=0)
+
+#GO:MF
+GOMF <- gr_H3K4me1[gr_H3K4me1$source=="GO:MF",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+GOMF <- GOMF %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOMF$term_name <- factor(GOMF$term_name, levels=GOMF$term_name)
+ggplot(GOMF[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 40)))  + scale_fill_continuous(low="palegreen4",high="palegreen2", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("GO:MF")
+
+#GO:CC
+GOCC <- gr_H3K4me1[gr_H3K4me1$source=="GO:CC",]
+#arrange by p-value and factor GO term description (so that levels will be ordered correctly for plotting)
+GOCC <- GOCC %>% arrange((p_value)) #reverse order, so most sig will be at top of bar graph
+GOCC$term_name <- factor(GOCC$term_name, levels=GOCC$term_name)
+ggplot(GOCC[1:10,], aes(x=term_name, y=intersection_size, fill=round(p_value, 20)))  + scale_fill_continuous(low="palegreen4",high="palegreen2", name="adjP") + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_y_continuous(name="Number of Genes")  + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + ggtitle("GO:CC")
+
+#plotting top GO terms, coloured by source
+GO <- gr_H3K4me1[grep("GO", gr_H3K4me1$source),]
+GO <- GO %>% arrange(p_value)
+GO$term_name <- factor(GO$term_name, levels=GO$term_name)
+unique(GO$source[1:10])
+#[1] "GO:BP" "GO:CC"
+
+ggplot(GO[1:10,], aes(x=term_name, y=-log10(p_value), fill=source)) + geom_bar(stat="identity", position="dodge")  +
+  coord_flip() + theme_classic() + scale_colour_manual(values="black", guide="none")  + theme(axis.title.y=element_blank(), panel.grid.major.y = element_blank(), panel.grid.minor.y=element_blank()) + geom_hline(yintercept=-log10(0.05), linetype="dashed")
+```
+![H3K4me1 volcano plot for WTEE/TGEE](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/volcano_H3K4me1_EE.png)
+
+![Top 10 GO:BP terms](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/GOBP_H3K4me1_EE.png)
+
+## Overlap in differential binding
+```{r}
+H3K4me1_WTEE_TGEE <- H3K4me1_WTEE_TGEE[match(H3K4me1_WTSE_TGSE$coord, H3K4me1_WTEE_TGEE$coord),]
+all.equal(H3K4me1_WTSE_TGSE$coord, H3K4me1_WTEE_TGEE$coord)
+
+nrow(SE <- H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$threshold==TRUE & H3K4me1_WTEE_TGEE$threshold==FALSE,])
+#3601
+nrow(SE_EE <- H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$threshold==TRUE & H3K4me1_WTEE_TGEE$threshold==TRUE,])
+#1040
+nrow(EE <- H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$threshold==TRUE & H3K4me1_WTSE_TGSE$threshold==FALSE,])
+#3693
+
+## Permuting group overlaps
+
+source('~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/5-methdiff_DNAm_DNAhm/overlap_permutation_2way.R')
+
+#WTSE/TGSE H3K4me1 and WTEE/TGEE H3K4me1
+overlap_permutation_2way(H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$FDR<=0.05 & abs(H3K4me1_WTSE_TGSE$Fold)>=0.5,"coord"], H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$FDR<=0.05 & abs(H3K4me1_WTEE_TGEE$Fold)>=0.5,"coord"], Group1="WTSE_TGSE", Group2="WTEE_TGEE", background.probes = H3K4me1_WTSE_TGSE$coord, permutation_number=10000)
+#[1] "Permutation P values for enrichment and depletion"
+#[1] "Enrichment WTSE_TGSE-WTEE_TGEE: 0; Depletion WTSE_TGSE-WTEE_TGEE: 1"
+```
+
+## Gene ontology split by SE/EE status
+```{r}
+length(unique(H3K4me1_WTSE_TGSE$SYMBOL)) #18,246 genes measured
+
+#gene lists
+SE_genes <- H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$threshold==TRUE,"SYMBOL"]
+EE_genes <- H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$threshold==TRUE,"SYMBOL"]
+SE_EE_genes <- unique(SE_genes[SE_genes %in% EE_genes]) #1680 genes
+SE_only_genes <- unique(SE_genes[-which(SE_genes %in% EE_genes)]) #1756 genes
+EE_only_genes <- unique(EE_genes[-which(EE_genes %in% SE_genes)]) #1956 genes
+#total of 5392 genes (30% of all genes measured!)
+
+gr_SE <- gost(query = SE_only_genes, organism = "mmusculus", ordered_query = FALSE, multi_query = FALSE, significant = TRUE, exclude_iea = FALSE, user_threshold = 0.05, correction_method = "fdr", domain_scope = "custom_annotated", custom_bg=H3K4me1_WTEE_TGEE$SYMBOL, sources = NULL, evcodes=TRUE)$result
+summary(as.factor(gr_SE$source))
+#GO:BP    TF 
+#    1   104 
+gr_SE[gr_SE$source=="GO:BP",c("term_name","p_value","recall","intersection_size")]
+#                                   term_name    p_value    recall intersection_size
+#1 positive regulation of signal transduction 0.03901929 0.1331845               179
+
+gr_SE_EE <- gost(query = SE_EE_genes, organism = "mmusculus", ordered_query = FALSE, multi_query = FALSE, significant = TRUE, exclude_iea = FALSE, user_threshold = 0.05, correction_method = "fdr", domain_scope = "custom_annotated", custom_bg=H3K4me1_WTEE_TGEE$SYMBOL, sources = NULL, evcodes=TRUE)$result
+summary(as.factor(gr_SE_EE$source))
+#GO:BP GO:CC GO:MF    HP  KEGG MIRNA  REAC    TF    WP 
+#  335    88    59    40    51     7     4   314     4 
+
+#GO:MF includes protein binding, protein kinase activity, phosphatase activity, transcription factor binding
+
+gr_EE <- gost(query = EE_only_genes, organism = "mmusculus", ordered_query = FALSE, multi_query = FALSE, significant = TRUE, exclude_iea = FALSE, user_threshold = 0.05, correction_method = "fdr", domain_scope = "custom_annotated", custom_bg=H3K4me1_WTEE_TGEE$SYMBOL, sources = NULL, evcodes=TRUE)$result
+summary(as.factor(gr_EE$source))
+#TF 
+#63
+
+save(gr_SE, gr_SE_EE, gr_EE, file="/mnt/scratch/KoborLab/DecipherPD_mouse/sschaffner/ee_asyn/hipp/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/gost_H3K4me1_SE_EE.RData")
+
+#heat map of H3K4me1 levels in each category and each environment, gene-level 
+
+H3K4me1_conc <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/conc_H3K4me1_2.csv")
+H3K4me1_TGEE <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_TGSE-TGEE_anno.csv")
+H3K4me1_TGEE <- H3K4me1_TGEE[H3K4me1_TGEE$coord %in% H3K4me1_conc$coord,]
+H3K4me1_conc <- H3K4me1_conc[match(H3K4me1_TGEE$coord, H3K4me1_conc$coord),]
+H3K4me1_scaled <- as.data.frame(t(apply(H3K4me1_conc[,3:ncol(H3K4me1_conc)], 1, function(x) scale(x))))
+colnames(H3K4me1_scaled) <- colnames(H3K4me1_conc[,3:ncol(H3K4me1_conc)])
+H3K4me1_scaled$rowmean <- rowMeans(H3K4me1_scaled)
+H3K4me1_scaled$coord <- H3K4me1_conc$coord
+all.equal(H3K4me1_scaled$coord, H3K4me1_TGEE$coord) #TRUE
+H3K4me1_scaled$Gene <- H3K4me1_TGEE$SYMBOL
+
+H3K4me1_scaled <- H3K4me1_scaled[H3K4me1_scaled$coord %in% H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$threshold==TRUE,"coord"],]
+#length(unique(H3K4me1_scaled$Gene)) #1680 genes
+
+#checking how many genes have loss of H3K4me1 in TGSE which is restored in TGEE
+#even though these are differentially bound in both environments, we might still see this pattern
+
+H3K4me1_scaled$mean_WTSE <- rowMeans(H3K4me1_scaled[,1:4])
+H3K4me1_scaled$mean_TGSE <- rowMeans(H3K4me1_scaled[,5:8])
+H3K4me1_scaled$mean_WTEE <- rowMeans(H3K4me1_scaled[,9:12])
+H3K4me1_scaled$mean_TGEE <- rowMeans(H3K4me1_scaled[,13:16])
+
+sum <- nrow(H3K4me1_scaled) #36,304 peaks
+length(H3K4me1_scaled$mean_TGSE[H3K4me1_scaled$mean_TGSE<H3K4me1_scaled$mean_WTSE]) #23,498 peaks (65%)
+TGSE_down <- H3K4me1_scaled[H3K4me1_scaled$mean_TGSE<H3K4me1_scaled$mean_WTSE,]
+length(TGSE_down$mean_TGEE[TGSE_down$mean_TGEE>TGSE_down$mean_TGSE]) #20,619 peaks (88% of peaks with H3K4me1 loss in TGEE, 57% of total peaks differentially bound in SE and EE)
+
+#peak lists
+SE_peaks <- H3K4me1_WTSE_TGSE[H3K4me1_WTSE_TGSE$threshold==TRUE,"coord"]
+EE_peaks <- H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$threshold==TRUE,"coord"]
+SE_EE_peaks <- unique(SE_peaks[SE_peaks %in% EE_peaks]) #1040 peaks
+SE_only_peaks <- unique(SE_peaks[-which(SE_peaks %in% EE_peaks)]) #3601 peaks
+EE_only_peaks <- unique(EE_peaks[-which(EE_peaks %in% SE_peaks)]) #3963 peaks
+#total of 5392 peaks (30% of all peaks measured!)
+
+library(reshape2)
+library(DescTools)
+library(RColorBrewer)
+H3K4me1_scaled <- H3K4me1_scaled[order(H3K4me1_scaled$mean_TGSE),]
+K4me1_melt <- melt(H3K4me1_scaled[,18:23], id.vars=c("coord","Gene"))
+K4me1_melt$group <- substr(K4me1_melt$variable, 6, 9)
+K4me1_melt$group <- as.factor(K4me1_melt$group)
+K4me1_melt$group <- reorder.factor(K4me1_melt$group, new.order=c("WTSE","TGSE","WTEE","TGEE"))
+K4me1_melt$coord <- factor(K4me1_melt$coord, levels=unique(K4me1_melt$coord))
+
+limit <- max(abs(K4me1_melt$value))*c(-1,1)
+
+ggplot(K4me1_melt, aes(x=group, y=coord, fill=value)) + geom_tile() + theme_bw() + theme(axis.title.y=element_blank(), axis.title.x=element_blank(), axis.text.y=element_blank(), axis.text.x=element_text(angle=90, hjust=1), plot.title=element_text(hjust=0.5, vjust=1, size=12), axis.ticks.y=element_blank(), plot.subtitle = element_text(hjust=0.5, size=10)) + scale_fill_distiller(palette="RdBu", direction=1, limit=limit, name="Row\nZ-score")
+
+#heat map (Z scores)
+library(gplots)
+library(pvclust)
+
+H3K4me1_mat <- as.matrix(H3K4me1_scaled[,1:16])
+clust <- pvclust(H3K4me1_mat)
+plot(clust)
+
+RdBu_pal2 <- brewer_pal(palette=5, type="div", direction=-1)
+heatmap.2(H3K4me1_mat, col=RdBu_pal2(9), trace="none", Colv=as.dendrogram(clust$hclust))
+
+#EE-only
+H3K4me1_scaled <- as.data.frame(t(apply(H3K4me1_conc[,3:ncol(H3K4me1_conc)], 1, function(x) scale(x))))
+colnames(H3K4me1_scaled) <- colnames(H3K4me1_conc[,3:ncol(H3K4me1_conc)])
+H3K4me1_scaled$rowmean <- rowMeans(H3K4me1_scaled)
+H3K4me1_scaled$coord <- H3K4me1_conc$coord
+all.equal(H3K4me1_scaled$coord, H3K4me1_TGEE$coord) #TRUE
+H3K4me1_scaled$Gene <- H3K4me1_TGEE$SYMBOL
+
+#EE only
+H3K4me1_scaled_EE <- H3K4me1_scaled[H3K4me1_scaled$coord %in% H3K4me1_WTEE_TGEE[H3K4me1_WTEE_TGEE$threshold==TRUE,"coord"],]
+#length(unique(H3K4me1_scaled_EE$Gene)) #1955 genes
+
+H3K4me1_scaled_EE$mean_WTSE <- rowMeans(H3K4me1_scaled_EE[,1:4])
+H3K4me1_scaled_EE$mean_TGSE <- rowMeans(H3K4me1_scaled_EE[,5:8])
+H3K4me1_scaled_EE$mean_WTEE <- rowMeans(H3K4me1_scaled_EE[,9:12])
+H3K4me1_scaled_EE$mean_TGEE <- rowMeans(H3K4me1_scaled_EE[,13:16])
+H3K4me1_scaled_EE <- H3K4me1_scaled_EE[order(H3K4me1_scaled_EE$mean_TGEE),]
+
+K4me1_melt <- melt(H3K4me1_scaled_EE[,18:23], id.vars=c("coord","Gene"))
+K4me1_melt$group <- substr(K4me1_melt$variable, 6, 9)
+K4me1_melt$group <- as.factor(K4me1_melt$group)
+K4me1_melt$group <- reorder.factor(K4me1_melt$group, new.order=c("WTSE","TGSE","WTEE","TGEE"))
+K4me1_melt$coord <- factor(K4me1_melt$coord, levels=unique(K4me1_melt$coord))
+
+limit <- max(abs(K4me1_melt$value))*c(-1,1)
+
+ggplot(K4me1_melt, aes(x=group, y=coord, fill=value)) + geom_tile() + theme_bw() + theme(axis.title.y=element_blank(), axis.title.x=element_blank(), axis.text.y=element_blank(), axis.text.x=element_text(angle=90, hjust=1), plot.title=element_text(hjust=0.5, vjust=1, size=12), axis.ticks.y=element_blank(), plot.subtitle = element_text(hjust=0.5, size=10)) + scale_fill_distiller(palette="RdBu", direction=1, limit=limit, name="Row\nZ-score")
+
+#heat map (Z scores)
+H3K4me1_mat <- as.matrix(H3K4me1_scaled_EE[,1:16])
+clust <- pvclust(H3K4me1_mat)
+plot(clust)
+
+RdBu_pal2 <- brewer_pal(palette=5, type="div", direction=-1)
+heatmap.2(H3K4me1_mat, col=RdBu_pal2(9), trace="none", Colv=as.dendrogram(clust$hclust))
+```
+
+#Checking for global H3K4me1 differences
+
+##Checking normality of distribution
+```{r global DNAhm, eval=F}
+library(moments)
+library(normtest)
+
+################# WTSE vs TGSE
+agostino.test(sample(H3K4me1_WTSE_TGSE$Fold, 46340))
+#	D'Agostino skewness test
+#
+#data:  sample(H3K4me1_WTSE_TGSE$Fold, 46340)
+#skew = -0.23471, z = -20.35651, p-value < 2.2e-16
+#alternative hypothesis: data have a skewness
+
+skewness.norm.test(H3K4me1_WTSE_TGSE$Fold, nrepl=1000)
+#	Skewness test for normality
+#
+#data:  H3K4me1_WTSE_TGSE$Fold
+#T = -0.28117, p-value < 2.2e-16
+
+################# WTEE vs TGEE
+agostino.test(sample(H3K4me1_WTEE_TGEE$Fold, 46340))
+#	D'Agostino skewness test
+#
+#data:  sample(H3K4me1_WTEE_TGEE$Fold, 46340)
+#skew = -0.098561, z = -8.642278, p-value < 2.2e-16
+#alternative hypothesis: data have a skewness
+
+skewness.norm.test(H3K4me1_WTEE_TGEE$Fold, nrepl=1000)
+#	Skewness test for normality
+#
+#data:  H3K4me1_WTEE_TGEE$Fold
+#T = -0.13928, p-value < 2.2e-16
+
+################# TGEE vs TGSE
+agostino.test(sample(H3K4me1_TGSE_TGEE$Fold, 46340))
+#	D'Agostino skewness test
+#
+#data:  sample(H3K4me1_TGSE_TGEE$Fold, 46340)
+#skew = 0.38727, z = 32.87840, p-value < 2.2e-16
+#alternative hypothesis: data have a skewness
+
+skewness.norm.test(H3K4me1_TGSE_TGEE$Fold, nrepl=1000)
+#	Skewness test for normality
+#
+#data:  H3K4me1_TGSE_TGEE$Fold
+#T = 0.30196, p-value < 2.2e-16
+
+################# WTEE vs WTSE
+agostino.test(sample(H3K4me1_WTSE_WTEE$Fold, 46340))
+#	D'Agostino skewness test
+#
+#data:  sample(H3K4me1_WTSE_WTEE$Fold, 46340)
+#skew = 0.17597, z = 15.35035, p-value < 2.2e-16
+#alternative hypothesis: data have a skewness
+
+skewness.norm.test(H3K4me1_WTSE_WTEE$Fold, nrepl=1000)
+#	Skewness test for normality
+#
+#data:  H3K4me1_WTSE_WTEE$Fold
+#T = 0.19089, p-value < 2.2e-16
+
+H3K4me1 <- read.csv("~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/conc_H3K4me1_2.csv")
+#colnames(H3K4me1)[3:18] <- c("WTSE1", "WTSE2", "WTSE3", "WTSE4", "TGSE1", "TGSE2", "TGSE3", "TGSE4", "WTEE1", "WTEE2", "WTEE3", "WTEE4", "TGEE1", "TGEE2", "TGEE3", "TGEE4")
+
+#calculate mean H3K4me1 levels across groups for each site
+H3K4me1$WTSE_mean <- rowMeans(H3K4me1[,3:6])
+H3K4me1$WTEE_mean <- rowMeans(H3K4me1[,11:14])
+H3K4me1$TGSE_mean <- rowMeans(H3K4me1[,7:10])
+H3K4me1$TGEE_mean <- rowMeans(H3K4me1[,15:18])
+
+#check whether data is normally distributed (parametric or non-paramteric test?)
+#get all values in one vector
+library(reshape2)
+H3K4me1_melt <- melt(H3K4me1[,3:18])
+qqnorm(H3K4me1_melt$value)
+
+#non-normal
+```
+![Q-Q plot](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/H3K4me1_qqplot.png)
+
+##Wilcoxin test
+```{r wilcox test, eval=F}
+#WTSE vs TGSE
+wilcox.test(H3K4me1$WTSE_mean, H3K4me1$TGSE_mean)$p.value #3.44288e-157
+summary(H3K4me1$TGSE_mean - H3K4me1$WTSE_mean)
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#-344.560   -9.154   -3.035   -4.447    2.345  192.300 
+    
+#WTEE vs TGEE
+wilcox.test(H3K4me1$WTEE_mean, H3K4me1$TGEE_mean)$p.value #3.980287e-54
+summary(H3K4me1$TGEE_mean - H3K4me1$WTEE_mean)
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#-195.775   -8.697   -2.080   -2.690    4.401   90.707 
+    
+#WTEE vs TGSE
+wilcox.test(H3K4me1$WTEE_mean, H3K4me1$TGSE_mean)$p.value #0
+summary(H3K4me1$TGSE_mean - H3K4me1$WTEE_mean)
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#-761.413  -15.880   -7.830  -11.518   -1.702   99.507
+
+#WTSE vs WTEE
+wilcox.test(H3K4me1$WTSE_mean, H3K4me1$WTEE_mean)$p.value #0
+summary(H3K4me1$WTEE_mean - H3K4me1$WTSE_mean)
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#-27.6025   0.5962   5.0100   7.0709  10.3388 416.8525 
+
+#WTSE vs TGEE
+wilcox.test(H3K4me1$WTSE_mean, H3K4me1$TGEE_mean)$p.value #6.277051e-163
+summary(H3K4me1$TGEE_mean - H3K4me1$WTSE_mean)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#-71.895  -2.821   3.107   4.381   9.710 338.405 
+
+#TGSE vs TGEE
+wilcox.test(H3K4me1$TGSE_mean, H3K4me1$TGEE_mean)$p.value #0
+summary(H3K4me1$TGEE_mean - H3K4me1$TGSE_mean)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#-44.500   1.590   5.862   8.828  11.678 621.393 
+     
+#plotting
+H3K4me1_melt$group <- NA
+H3K4me1_melt[grep("WTSE", H3K4me1_melt$variable),"group"] <- "WTSE"
+H3K4me1_melt[grep("TGSE", H3K4me1_melt$variable),"group"] <- "TGSE"
+H3K4me1_melt[grep("WTEE", H3K4me1_melt$variable),"group"] <- "WTEE"
+H3K4me1_melt[grep("TGEE", H3K4me1_melt$variable),"group"] <- "TGEE"
+
+H3K4me1_melt$group <- as.factor(H3K4me1_melt$group)
+H3K4me1_melt$group <- reorder.factor(H3K4me1_melt$group, new.order=c("WTSE","TGSE","WTEE","TGEE"))
+
+ggplot(H3K4me1_melt, aes(x=group, y=log(value), col=group)) + geom_boxplot() + theme_classic() + scale_color_manual(values=c("black","plum3","gray60","palegreen3")) + theme(axis.title.x=element_blank(), legend.position = "none") + ylab("Log Read Count")
+
+#Kruskal-Wallis test with pairwise Wilcoxin
+H3K4me1_melt$group <- as.factor(H3K4me1_melt$group)
+kw <- kruskal.test(value ~ group, data=H3K4me1_melt)
+#	Kruskal-Wallis rank sum test
+#
+#data:  value by group
+#Kruskal-Wallis chi-squared = 19035, df = 3, p-value < 2.2e-16
+pairwise.wilcox.test(H3K4me1_melt$value, H3K4me1_melt$group,
+                 p.adjust.method = "BH")
+
+#     WTSE   TGSE   WTEE  
+#TGSE <2e-16 -      -     
+#WTEE <2e-16 <2e-16 -     
+#TGEE <2e-16 <2e-16 <2e-16
+```
+![H3K4me1 levels across groups](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/boxplots.png)
+
+![H3K4me1 levels across groups (conc < 100)](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/7-ChIPseq/Zinah_Wassouf_data/diffbind_2_reps_all_conspeaks/H3K4me1/boxplots_conc<100.png)
