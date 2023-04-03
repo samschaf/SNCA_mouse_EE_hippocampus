@@ -100,12 +100,12 @@ dev.off()
 Using GxE results. "Estimate" and manual delta beta should be the same.
 
 ```{r volcano 1, eval=F}
-results_G_complete <- results_G[complete.cases(results_G$`Pr(>|t|)`),]
+results_G_complete <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/5-methdiff_DNAm_DNAhm/methylation/WTEE_TGEE/linear_model/auto/CpH/lm_WTEE_TGEE.csv")
 cor(results_G_complete$Estimate, results_G_complete$DB) # 1
-results_G_complete$adjP <- p.adjust(results_G_complete$`Pr(>|t|)`, method="BH")
+results_G_complete$adjP <- p.adjust(results_G_complete$`Pr...t..`, method="BH")
 
 #Volcano plot
-results_G_complete$threshold <- (results_G_complete$adjP<=0.05 & abs(results_G_complete$Estimate)>=0.1)
+results_G_complete$threshold <- (results_G_complete$adjP<=0.15 & abs(results_G_complete$Estimate)>=0.1)
 
 #annotating which hits have increased/decreased DNAm or no change
 results_G_complete$DNAm_change <- results_G_complete$threshold
@@ -114,7 +114,7 @@ results_G_complete[results_G_complete$threshold==TRUE & results_G_complete$Estim
 results_G_complete[results_G_complete$threshold==FALSE,]$DNAm_change <- "NS"
 summary(as.factor(results_G_complete$DNAm_change))
 #Decrease Increase       NS 
-#      12       16    75505 
+#      28       33    75472 
 
 #testing skewness of delta betas
 skewness.norm.test(results_G_complete$Estimate, nrepl=1000)
@@ -122,34 +122,34 @@ skewness.norm.test(results_G_complete$Estimate, nrepl=1000)
 #T = -0.078009, p-value < 2.2e-16
 
 #get the nominal p threshold which corresponds to your FDR cutoff
-max(results_G_complete[results_G_complete$threshold==TRUE,]$`Pr(>|t|)`) #1.718979e-05
+max(results_G_complete[results_G_complete$threshold==TRUE,]$`Pr...t..`) # 0.000122277
 
 #Code for plotting. If you want to plot adjusted p on the y axis, ensure to change the variable and axis label. Also check that the numbers for your pcutoff threshold and delta beta threshold are correct (for plotting cutoff lines).
 library(ggrepel)
-png("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/WTEE_TGEE/linear_model/CpH/volcano_WTEE_TGEE_CpH_thresholded.png", width=305, height=335)
+png("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/5-methdiff_DNAm_DNAhm/methylation/WTEE_TGEE/linear_model/auto/CpH/volcano_WTEE_TGEE_CpH_thresholded.png", width=305, height=335)
 ggplot(data=results_G_complete, aes(x=Estimate, y=-log10(adjP), colour=DNAm_change)) +
   geom_point(size=1.75) +
   labs(legend.position = "none") +
-  xlab("Delta Beta") + ylab("-log10 adj P-Value") + theme_classic() + scale_color_manual(values=c("palegreen3", "palegreen3","gray87")) + geom_hline(yintercept=-log10(0.05)) + geom_vline(xintercept=-0.1) + geom_vline(xintercept=0.1) + theme(legend.position = "none") 
+  xlab("Delta Beta") + ylab("-log10 adj P-Value") + theme_classic() + scale_color_manual(values=c("palegreen3", "palegreen3","gray87")) + geom_hline(yintercept=-log10(0.15)) + geom_vline(xintercept=-0.1) + geom_vline(xintercept=0.1) + theme(legend.position = "none") 
 dev.off()
 
-png("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/WTEE_TGEE/linear_model/CpH/volcano_WTEE_TGEE_CpH_thresholded_nomP.png", width=305, height=335)
-ggplot(data=results_G, aes(x=Estimate, y=-log10(`Pr...t..`), colour=DNAm_change)) +
+png("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/5-methdiff_DNAm_DNAhm/methylation/WTEE_TGEE/linear_model/auto/CpH/volcano_WTEE_TGEE_CpH_thresholded_nomP.png", width=305, height=335)
+ggplot(data=results_G_complete, aes(x=Estimate, y=-log10(`Pr...t..`), colour=DNAm_change)) +
   geom_point(size=1.75) +
   labs(legend.position = "none") +
-  xlab("Delta Beta") + ylab("-log10 P-Value") + theme_classic() + scale_color_manual(values=c("palegreen3","palegreen3", "gray87")) + geom_hline(yintercept=-log10(1.718979e-05)) + geom_vline(xintercept=-0.1) + geom_vline(xintercept=0.1) + theme(legend.position = "none") + xlim(c(-0.8,0.8)) + ylim(c(0,15))
+  xlab("Delta Beta") + ylab("-log10 P-Value") + theme_classic() + scale_color_manual(values=c("palegreen3","palegreen3", "gray87")) + geom_hline(yintercept=-log10(0.000122277)) + geom_vline(xintercept=-0.1) + geom_vline(xintercept=0.1) + theme(legend.position = "none") + xlim(c(-0.8,0.8))
 dev.off()
 
 #annotate genes
-anno <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpH/CpH_anno_mC_ChIP.txt")
+anno <- read.delim("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpH/auto/10X_filter/CpH_anno_mC_ChIP.txt")
 anno$site <- gsub(": ", ".", anno$site)
 all(anno$site==results_G_complete$site) #TRUE
 results_G_complete <- cbind(results_G_complete, anno[,2:5])
-write.csv(results_G_complete, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/WTEE_TGEE/linear_model/CpH/lm_WTEE_TGEE_CpH.csv", row.names=F)
+write.csv(results_G_complete, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/5-methdiff_DNAm_DNAhm/methylation/WTEE_TGEE/linear_model/auto/CpH/lm_WTEE_TGEE_CpH.csv", row.names=F)
 
 hits <- results_G_complete[results_G_complete$threshold==TRUE,c(6,11,13,14,7,8)]
-write.csv(hits, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/WTEE_TGEE/linear_model/CpH/lm_WTEE_TGEE_mC_CpH_hits.csv", row.names=F)
+write.csv(hits, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/5-methdiff_DNAm_DNAhm/methylation/WTEE_TGEE/linear_model/auto/CpH/lm_WTEE_TGEE_mC_CpH_hits.csv", row.names=F)
 ```
-![Volcano plot with thresholds](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/WTEE_TGEE/linear_model/CpH/volcano_WTEE_TGEE_CpH_thresholded_nomP.png)
+![Volcano plot with thresholds](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/5-methdiff_DNAm_DNAhm/methylation/WTEE_TGEE/linear_model/auto/CpH/volcano_WTEE_TGEE_CpH_thresholded_nomP.png)
 
 
