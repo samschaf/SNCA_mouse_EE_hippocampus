@@ -1,4 +1,4 @@
-# Creating background annotation files for genomic and CpH island contexts
+# Creating background annotation files for genomic and CpG island contexts
 ### Author: Samantha Schaffner
 ### Date: Jan 5, 2023
 
