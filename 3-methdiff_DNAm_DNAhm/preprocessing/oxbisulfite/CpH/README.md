@@ -6,4 +6,4 @@ hippEE_oxBS_PreProcessing_CpH_SS.Rmd: Sample- and CpH-level quality control asse
 
 1-transcript_length_mC_CpH.R: Calculating length of each transcript annotated per CpH.
 
-2-cpg_site_annotation_mC_CpH.R: Assigning one annotation per CpH, based on the longest transcript mapping to that CpH.
+2-cph_site_annotation_mC.R: Assigning one annotation per CpH, based on the longest transcript mapping to that CpH.
