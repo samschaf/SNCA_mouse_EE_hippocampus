@@ -1,4 +1,4 @@
-This folder contains R scripts used to pre-process the DNAm and DNAhm data used in the manuscript (subfolder "preprocessing"), and to analyze differential methylation (subfolder "methylation") and hydroxymethylation (subfolder "hydroxy").
+This folder contains R scripts used to pre-process the DNAm and DNAhm data used in the manuscript (subfolder "preprocessing"), and to analyze DNAm (subfolder "methylation") and DNAhm (subfolder "hydroxy").
 
 lambda_bisulfite_check.Rmd: Used to read in methratio files aligned to the phage lambda genome and check for successful bisulfite conversion in each sample (<1% methylation level).
 
