@@ -1,0 +1,142 @@
+DecipherPD Mouse Enriched Environment Hippocampus Differential Methylation
+================================
+
+##### Analyst: Samantha Schaffner
+##### Date: Jan 16, 2023
+
+In this script I will compare DNAm and DNAhm levels at CpGs with differential hydroxymethylation. Typically these should be inversely correlated; however, loss of hmC is possible without gain of mC, if exisiting hmC is oxidized to C. I'll be looking more for a loss of mC associated with gain of hmC.
+
+## Load in data and set working directories
+
+```{r load data, eval=F}
+.libPaths(c(.libPaths(),"/mnt/scratch/KoborLab/R_Libs/4.2"))
+library(BiSeq)
+library(GenomicRanges)
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+library(gplots)
+library(RColorBrewer)
+library(gtools)
+library(DescTools)
+library(normtest)
+library(ggpubr)
+library(gridExtra)
+library(bacon)
+library(NCmisc)
+library(limma)
+library(car)
+library(gtools)
+library(RColorBrewer)
+library(pvclust)
+source("/mnt/scratch/KoborLab/shared_coding_resource/qqplot_NG.R")
+```
+
+## Reading in differentially hydroxymethylated CpGs list
+
+```{r volcano 1, eval=F}
+results_G <- read.csv("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/hydroxy/WTEE_TGEE/linear_model/auto/CpG/lm_WTEE_TGEE.csv")
+
+#CpGs with increased hmC in TG mice
+hmC_up <- results_G[results_G$DB>0 & results_G$threshold==TRUE & results_G$adjP<=0.05,"site"] #4 CpGs
+
+results_G[results_G$DB>0 & results_G$threshold==TRUE & results_G$adjP<=0.05,c("site","gene","genomic_anno","DB","adjP")]
+#                site  gene       genomic_anno        DB       adjP
+#8385  chr17.85619582  <NA>  mm10_genes_1to5kb 0.3835439 0.04847759
+#8492   chr18.6481875  <NA>   enhancers_poised 0.2567208 0.01985356
+#9583  chr19.53839875  <NA> mm10_genes_introns 0.2358549 0.02404964
+#14541 chr5.137653564 Agfg2   promoters_active 0.2331356 0.04135399
+
+#UCSC genes:
+#chr17.85619582: Six3
+#chr18.6481875: Epc1
+#chr19.53839875: Rbm20
+
+results_SE <- read.csv("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/hydroxy/WTSE_TGSE/linear_model/auto/CpG/lm_WTSE_TGSE.csv")
+results_SE[results_SE$site %in% hmC_up,c("site","gene","genomic_anno","DB","adjP")]
+#                site  gene       genomic_anno          DB      adjP
+#8385  chr17.85619582  <NA>  mm10_genes_1to5kb  0.14436636 0.4429719
+#8492   chr18.6481875  <NA>   enhancers_poised  0.08598006 0.2971161
+#9583  chr19.53839875  <NA> mm10_genes_introns  0.17226418 0.0326514
+#14541 chr5.137653564 Agfg2   promoters_active -0.03236225 0.8625152
+
+#CpGs with decreased hmC in TG mice
+hmC_down <- results_G[results_G$DB<0 & results_G$threshold==TRUE & results_G$adjP<=0.05,"site"] #366 CpGs
+
+load("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/auto/10X_filter/all_EE_mC_betas_CpG_10X.RData")
+dim(all_EE)
+#[1] 914215     16
+colnames(all_EE)
+all_EE <- all_EE[,-c(8,12,13)] #removing outliers
+
+####### CpGs with increased hmC in TG mice (expecting decreased mC in TG mice)
+#DNAm
+nrow(betas_mC <- all_EE[rownames(all_EE) %in% hmC_up,]) #4
+
+#DNAhm
+load("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/auto/all_EE_hmC_betas_CpG_10X_auto_var_noout.RData")
+nrow(betas_hmC <- betas_variable[rownames(betas_variable) %in% hmC_up,]) #4
+all(rownames(betas_mC)==rownames(betas_hmC)) #TRUE
+
+colnames(betas_mC) <- paste(colnames(betas_mC), "mC", sep=".")
+colnames(betas_hmC) <- paste(colnames(betas_hmC), "hmC", sep=".")
+betas_combined <- cbind(betas_mC, betas_hmC)
+
+betas_combined <- as.matrix(betas_combined)
+Spect <- brewer.pal("Spectral", n=11)
+Greys <- brewer.pal("Greys", n=9)
+
+heatmap.2(betas_combined, trace="none", col=Greys, Colv=NA, symbreaks=F, symkey=F)
+#WTEE has the lowest hmC. The TG mice have a range of different mC values. Around half have loss of mC in TG mice.
+
+####### CpGs with decreased hmC in TG mice 
+#DNAm
+nrow(betas_mC <- all_EE[rownames(all_EE) %in% hmC_down,]) #366
+
+#DNAhm
+nrow(betas_hmC <- betas_variable[rownames(betas_variable) %in% hmC_down,]) #366
+all(rownames(betas_mC)==rownames(betas_hmC)) #TRUE
+
+colnames(betas_mC) <- paste(colnames(betas_mC), "mC", sep=".")
+colnames(betas_hmC) <- paste(colnames(betas_hmC), "hmC", sep=".")
+betas_combined <- cbind(betas_mC, betas_hmC)
+
+betas_combined <- as.matrix(betas_combined)
+
+heatmap.2(betas_combined, trace="none", col=Greys, Colv=NA, symbreaks=F, symkey=F)
+
+####### Check significance of DHM CpGs in differential methylation analysis
+# nominal level since not much differential methylation was seen
+results_mC <- read.csv("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/methylation/WTEE_TGEE/linear_model/auto/CpG/lm_WTEE_TGEE.csv")
+nrow(mC_change <- results_mC[results_mC$Pr...t..<=0.01 & abs(results_mC$DB)>=0.1,]) #4128
+length(mC_hmC <- mC_change$site[mC_change$site %in% hmC_down|mC_change$site %in% hmC_up]) #10 (all CpGs with increased hmC have a trend toward mC change, meeting effect size cutoff as well as nominal p-value cutoff)
+summary(results_mC[results_mC$site %in% mC_hmC,c("Pr...t..","adjP")])
+#    Pr...t..              adjP       
+# Min.   :1.934e-05   Min.   :0.2655  
+# 1st Qu.:1.604e-03   1st Qu.:0.5411  
+# Median :3.598e-03   Median :0.6250  
+# Mean   :4.185e-03   Mean   :0.6038  
+# 3rd Qu.:6.532e-03   3rd Qu.:0.6784  
+# Max.   :9.943e-03   Max.   :0.7157  
+
+summary(abs(results_mC[results_mC$site %in% mC_hmC,"DB"]))
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.1047  0.2040  0.2539  0.2596  0.2989  0.4507 
+
+summary(abs(results_G[results_G$site %in% mC_hmC,"DB"]))
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.1643  0.2373  0.2952  0.3102  0.3628  0.5310 
+
+nrow(betas_mC <- all_EE[rownames(all_EE) %in% mC_hmC,]) #100
+nrow(betas_hmC <- betas_variable[rownames(betas_variable) %in% mC_hmC,]) #100
+all(rownames(betas_mC)==rownames(betas_hmC)) #TRUE
+
+colnames(betas_mC) <- paste(colnames(betas_mC), "mC", sep=".")
+colnames(betas_hmC) <- paste(colnames(betas_hmC), "hmC", sep=".")
+betas_combined <- cbind(betas_mC, betas_hmC)
+
+betas_combined <- as.matrix(betas_combined)
+
+heatmap.2(betas_combined, trace="none", col=Spect, Colv=NA, symbreaks=F, symkey=F)
+```
+

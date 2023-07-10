@@ -1,0 +1,202 @@
+DecipherPD Mouse Enriched Environment Hippocampus Differential Methylation
+================================
+
+##### Analyst: Samantha Schaffner
+##### Date: Dec 8, 2022
+
+Project summary:
+
+This project investigates the effects of genotype and lifestyle factors on the DNA methylome of C57BL/6 mice. Specifically, wild type and human SNCA transgenic mice (with a BAC insertion containing full-length human SNCA and all its regulatory elements) were reared to the age of either 6 or 12 months before sacrificing. A subset of 6 month old mice from both genotypes were exposed to a chronic stress paradigm, while a subset of 12 month old mice from both genotypes were exposed to an enriched environment paradigm. From all groups, hippocampus and striatum tissues were collected.
+
+DNA was extracted from mouse brain tissues and prepped for reduced representation bisulfite sequenicng (RRBS) using either a bisulfite conversion (mC + hmC) or oxidatitve bisulfite conversion (mC only) protocol. Samples were pooled in groups of 8 and sequenced on an Illumina HiSeq2500 (75bp, paired-end) at the BC Genome Sciences Centre. Alignment and methylation ratio calculations were performed using the BSMAP pipeline.
+
+## Load in data and set working directories
+
+```{r load data, eval=F}
+.libPaths(c(.libPaths(),"/mnt/scratch/KoborLab/R_Libs/4.2"))
+library(BiSeq)
+library(GenomicRanges)
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+library(gplots)
+library(RColorBrewer)
+library(gtools)
+library(DescTools)
+library(normtest)
+library(ggpubr)
+library(gridExtra)
+library(bacon)
+library(NCmisc)
+library(limma)
+library(car)
+source("/mnt/scratch/KoborLab/shared_coding_resource/qqplot_NG.R")
+```
+
+## Differential methylation between groups: TGSE vs TGEE
+
+```{r betaReg, eval=F}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpH/oxBS_BSraw_CpH_10X_noout_auto_var.RData")
+meta <- colData(BSraw_auto_var)
+str(meta[,c("Genotype","Environment")])
+meta$Genotype <- as.factor(meta$Genotype)
+meta$Genotype <- reorder.factor(meta$Genotype, new.order=c("TG","WT"))
+meta$Environment <- as.factor(meta$Environment)
+meta$Environment <- reorder.factor(meta$Environment, new.order=c("STD","EE"))
+str(meta[,c("Genotype","Environment")])
+colData(BSraw_auto_var) <- meta
+
+betas <- methLevel(raTGoRel(BSraw_auto_var))
+rownames(betas) <- paste(seqnames(BSraw_auto_var), ranges(BSraw_auto_var), sep=".")
+all.equal(colnames(betas),meta$SampleID) #TRUE
+
+#LM on variable cytosines
+lm_results_E <- lapply(1:nrow(betas), function(x) {
+  return(summary(lm(betas[x,] ~ meta$Environment*meta$Genotype))$coefficients[2,])
+})
+results_E <- as.data.frame(do.call(rbind, lm_results_E))
+results_E$z <- zscoreT(results_E$`t value`, df=12)
+results_E$site <- rownames(betas)
+results_E_complete <- results_E[complete.cases(results_E$z),]
+bcz <- bacon(results_E_complete$z)
+#Bacon-object containing 1 set(s) of 75533 test-statistics.
+#...estimated bias: 0.028.
+#...estimated inflation: 0.99.
+#
+#Empirical null estimates are based on 5000 iterations with a burnin-period of 2000.
+
+hist(results_E$`Pr(>|t|)`)
+qqunif.plot(results_E$`Pr(>|t|)`[complete.cases(results_E$`Pr(>|t|)`)], title="lm ~Genotype*Environment")
+
+png("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/TGSE_TGEE/linear_model/CpH/volcano_GxE_CpH_auto.png", width=305, height=335)
+ggplot(data=results_E_complete, aes(x=Estimate, y=-log10(`Pr(>|t|)`), colour="grey")) +
+  geom_point(size=1.75) +
+  labs(legend.position = "none") +
+  xlab("Adjusted Delta Beta") + ylab("-log10 P-Value") + theme_classic() + scale_color_manual(values=c( "gray87")) + theme(legend.position = "none")
+dev.off()
+
+#calculate delta betas manually
+results_E$site <- rownames(betas)
+colnames(betas)
+results_E$DB <- rowMeans(betas[,11:13]) - rowMeans(betas[,8:10])
+
+write.csv(results_E, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/TGSE_TGEE/linear_model/CpH/lm_TGSE_TGEE.csv", row.names=F)
+
+png("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/TGSE_TGEE/linear_model/CpH/volcano_GxE_CpH_auto_manual_DB.png", width=305, height=335)
+ggplot(data=results_E, aes(x=DB, y=-log10(`Pr(>|t|)`), colour="grey")) +
+  geom_point(size=1.75) +
+  labs(legend.position = "none") +
+  xlab("Delta Beta") + ylab("-log10 P-Value") + theme_classic() + scale_color_manual(values=c( "gray87")) + theme(legend.position = "none")
+dev.off()
+```
+![P-value histogram](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/TGSE_TGEE/linear_model/CpH/pval_hist.png)
+
+![Q-Q plot](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/TGSE_TGEE/linear_model/CpH/qqplot.png)
+
+![Volcano plot](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/TGSE_TGEE/linear_model/CpH/volcano_GxE_CpH_auto.png)
+
+## Thresholded volcano plot 
+
+Using GxE results. "Estimate" and manual delta beta should be the same.
+
+```{r volcano 1, eval=F}
+results_E_complete <- results_E[complete.cases(results_E$`Pr(>|t|)`),]
+cor(results_E_complete$Estimate, results_E_complete$DB) # 1
+results_E_complete$adjP <- p.adjust(results_E_complete$`Pr(>|t|)`, method="BH")
+
+#Volcano plot
+results_E_complete$threshold <- (results_E_complete$adjP<=0.05 & abs(results_E_complete$Estimate)>=0.1)
+
+#annotating which hits have increased/decreased DNAm or no change
+results_E_complete$DNAm_change <- results_E_complete$threshold
+results_E_complete[results_E_complete$threshold==TRUE & results_E_complete$Estimate>0,]$DNAm_change <- "Increase"
+results_E_complete[results_E_complete$threshold==TRUE & results_E_complete$Estimate<0,]$DNAm_change <- "Decrease"
+results_E_complete[results_E_complete$threshold==FALSE,]$DNAm_change <- "NS"
+summary(as.factor(results_E_complete$DNAm_change))
+#Decrease Increase       NS 
+#       2        7    75524 
+
+#testing skewness of delta betas
+skewness.norm.test(results_E_complete$Estimate, nrepl=1000)
+#data:  results_E_complete$Estimate
+#T = 0.089595, p-value < 2.2e-16
+
+#get the nominal p threshold which corresponds to your FDR cutoff
+max(results_E_complete[results_E_complete$threshold==TRUE,]$`Pr(>|t|)`) #5.449301e-06
+
+#Code for plotting. If you want to plot adjusted p on the y axis, ensure to change the variable and axis label. Also check that the numbers for your pcutoff threshold and delta beta threshold are correct (for plotting cutoff lines).
+library(ggrepel)
+png("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/TGSE_TGEE/linear_model/CpH/volcano_TGSE_TGEE_CpH_thresholded.png", width=305, height=335)
+ggplot(data=results_E_complete, aes(x=Estimate, y=-log10(adjP), colour=DNAm_change)) +
+  geom_point(size=1.75) +
+  labs(legend.position = "none") +
+  xlab("Delta Beta") + ylab("-log10 adj P-Value") + theme_classic() + scale_color_manual(values=c("plum3","plum3", "gray87")) + geom_hline(yintercept=-log10(0.05)) + geom_vline(xintercept=-0.1) + geom_vline(xintercept=0.1) + theme(legend.position = "none") 
+dev.off()
+
+png("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/TGSE_TGEE/linear_model/CpH/volcano_TGSE_TGEE_CpH_thresholded_nomP.png", width=305, height=335)
+ggplot(data=results_E_complete, aes(x=Estimate, y=-log10(`Pr(>|t|)`), colour=DNAm_change)) +
+  geom_point(size=1.75) +
+  labs(legend.position = "none") +
+  xlab("Delta Beta") + ylab("-log10 P-Value") + theme_classic() + scale_color_manual(values=c("plum3","plum3", "gray87")) + geom_hline(yintercept=-log10(5.449301e-06)) + geom_vline(xintercept=-0.1) + geom_vline(xintercept=0.1) + theme(legend.position = "none") 
+dev.off()
+
+write.csv(results_E_complete, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/TGSE_TGEE/linear_model/CpH/lm_TGSE_TGEE.csv", row.names=F)
+
+#annotate and save hits
+anno <- read.delim("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpH/auto/10X_filter/CpH_anno_mC_ChIP.txt")
+anno$site <- gsub(": ", ".", anno$site)
+all(anno$site==results_E_complete$site) #TRUE
+results_E_complete <- cbind(results_E_complete, anno[,2:5])
+
+colnames(results_E_complete)
+hits <- results_E_complete[results_E_complete$threshold==TRUE & results_E_complete$adjP<=0.05,c(6,11,13,14,7,8)]
+colnames(hits)
+write.csv(hits, file="~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/methylation/TGSE_TGEE/linear_model/CpH//lm_TGSE_TGEE_mC_CpH_hits.csv", row.names=F)
+```
+![Volcano plot with thresholds](/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/TGSE_TGEE/linear_model/CpH/volcano_TGSE_TGEE_CpH_thresholded_nomP.png)
+
+### Box plots
+```{r box plots, eval=F}
+nrow(betas_sub <- as.data.frame(betas[rownames(betas) %in% hits[hits$adjP<=0.05,"site"],])) #9
+
+betas_sub$CpG <- rownames(betas_sub)
+betas_melt <- melt(betas_sub, id.vars="CpG")
+betas_melt$group <- substr(betas_melt$variable, start=1, stop=4)
+betas_melt$group <- reorder.factor(betas_melt$group, new.order=c("WTSE","TGSE","WTEE","TGEE"))
+
+ggplot(betas_melt, aes(x=group,y=value,col=group)) + scale_colour_manual(values=c("black","plum3","gray60","palegreen3")) + theme_classic() + facet_wrap(~CpG) + geom_point() + geom_boxplot() + ylab("Beta value") + theme(axis.title.x=element_blank()) + ylim(c(0,1))
+
+#check sig in each comparison
+hits[hits$adjP<=0.05,c("site","adjP")]
+#            site       adjP
+#1 chr1.153170229 0.01424300
+#2 chr11.41000752 0.01424300
+#3 chr11.84870406 0.01596879
+#4 chr13.47215999 0.04302577
+#5 chr18.77515699 0.02259320
+#6 chr18.78292209 0.02259320
+#7 chr3.104804318 0.02259320
+#8  chr6.16966299 0.02259320
+#9 chr7.111813638 0.03384539
+
+SE_results <- read.csv("~/KoborLab/Projects/DecipherPD_mouse/SE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/methylation/WTSE_TGSE/linear_model/auto/CpH/lm_WTSE_TGSE_CpH.csv")
+SE_results[SE_results$site %in% hits[hits$adjP<=0.05,"site"] & SE_results$adjP<=0.05,c("site","adjP")]
+#                site       adjP
+#11912 chr11.84870406 0.01734535
+58747  chr6.16966299 0.02071479
+
+EE_results <- read.csv("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/methylation/WTEE_TGEE/linear_model/auto/CpH/lm_WTEE_TGEE_CpH.csv")
+EE_results[EE_results$site %in% hits[hits$adjP<=0.05,"site"] & EE_results$adjP<=0.05,c("site","adjP")]
+#                site        adjP
+#3713  chr1.153170229 0.003788610
+#10050 chr11.41000752 0.003463424
+#18742 chr13.47215999 0.037704045
+#35180 chr18.77515699 0.006679122
+#35211 chr18.78292209 0.018076354
+#45834 chr3.104804318 0.026113918
+#65315 chr7.111813638 0.016712894
+
+WT_results <- read.csv("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/methylation/WTSE_WTEE/linear_model/CpH/lm_WTSE_WTEE.csv")
+WT_results[WT_results$site %in% hits[hits$adjP<=0.05,"site"] & WT_results$adjP<=0.05,c("site","adjP")] #none
+```
+

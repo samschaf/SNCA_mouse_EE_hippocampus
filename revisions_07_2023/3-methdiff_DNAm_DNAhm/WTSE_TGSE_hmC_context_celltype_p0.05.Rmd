@@ -1,0 +1,1878 @@
+##Permutation testing code for genomic enrichment: mouse mm10 version
+Adapted from Rachel Edgar. Updated by Samantha Schaffner.
+
+
+##Libraries
+```{r library, eval=F}
+.libPaths(c(.libPaths(), "/mnt/scratch/KoborLab/R_Libs/4.2", "/mnt/scratch/KoborLab/Personal_Folders/sschaffner/Rstudio/R/x86_64-pc-linux-gnu-library/4.0/"))
+library(lifecycle, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(scales, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+library(vctrs, lib.loc="/mnt/scratch/KoborLab/R_Libs/4.2")
+
+library(annotatr)
+library(dplyr)
+library(ggplot2)
+library(gtools)
+library(biomaRt)
+library(gplots)
+library(RColorBrewer)
+library(DescTools)
+library(reshape2)
+```
+
+
+##Permutation test
+```{r}
+#First, read in background annotation data frame with all of the sites you tested for differential hydroxy and their gene contexts (NOT cpg island contexts)
+#This should be named "Gene_CpG_Relations_update"
+
+Gene_CpG_Relations_update <- read.delim("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/auto/cpg_anno_hmC_ChIP.txt", sep="\t")
+Gene_CpG_Relations_update$site <- gsub(": ", ".", Gene_CpG_Relations_update$site)
+
+#Create a subsetted data frame containing only the cpg island annotation information created in the first code chunk, named ("cpg_anno_cgi")
+cpg_anno_cgi <- Gene_CpG_Relations_update[,c("site","cgi_anno")]
+colnames(cpg_anno_cgi)[2] <- "anno"
+
+Gene_CpG_Relations_update[is.na(Gene_CpG_Relations_update$genomic_anno),"genomic_anno"] <- "mm10_genes_intergenic"
+Gene_CpG_Relations_update <- Gene_CpG_Relations_update[,c("site","genomic_anno")]
+colnames(Gene_CpG_Relations_update)[2] <- "anno"
+
+##### Permutation P value and fold change plot
+source('~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/CGI_Gene_permutation_enrichment.R')
+
+#running the permutation: specify inputs
+lm_results <- read.csv("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/hydroxy/WTSE_TGSE/linear_model/auto/CpG/lm_WTSE_TGSE.csv")
+CpG_list <- lm_results[lm_results$threshold==TRUE & lm_results$adjP<=0.05,"site"] #this should be a vector of all of the CpG sites that were hits in your data (passing p-value and effect size thresholds). Ensure the sites are written in the same format as they are in your background annotation file so they will match up
+#707 hits for WTSE/TGSE
+background.probes <- lm_results$site
+permutation_number=1000 #typically 1000 or 10000 permutations are performed
+plotmin=-5
+plotmax=5
+CGI_Gene_permutation_enrichment(CpG_list, background.probes, permutation_number, plotmin, plotmax)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 0; Feature: enhancers_active"
+#[1] "Enrichment: 1; Depletion 0; Feature: enhancers_poised"
+#[1] "Enrichment: 0.966; Depletion 1; Feature: mm10_genes_1to5kb"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_3UTRs"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_exonintronboundaries"
+#[1] "Enrichment: 0.014; Depletion 1; Feature: mm10_genes_exons"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intronexonboundaries"
+#[1] "Enrichment: 1; Depletion 0.028; Feature: mm10_genes_introns"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_promoters"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_lncrna_gencode"
+#[1] "Enrichment: 1; Depletion 0; Feature: promoters_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_enhancers_fantom"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_5UTRs"
+#[1] "Enrichment: 0; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 0.064; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 0; Feature: mm10_cpg_shores"
+
+SE_sites_down <- lm_results[lm_results$threshold==TRUE & lm_results$DNAm_change=="Decrease" & lm_results$adjP<=0.05,"site"] #697
+SE_sites_up <- lm_results[lm_results$threshold==TRUE & lm_results$DNAm_change=="Increase" & lm_results$adjP<=0.05,"site"] #10
+
+CGI_Gene_permutation_enrichment(SE_sites_down, background.probes, permutation_number, plotmin, plotmax)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 0; Feature: enhancers_active"
+#[1] "Enrichment: 1; Depletion 0; Feature: enhancers_poised"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_1to5kb"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_3UTRs"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_exonintronboundaries"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_exons"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intronexonboundaries"
+#[1] "Enrichment: 1; Depletion 0.028; Feature: mm10_genes_introns"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_promoters"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_lncrna_gencode"
+#[1] "Enrichment: 1; Depletion 0; Feature: promoters_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_enhancers_fantom"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_5UTRs"
+#[1] "Enrichment: 0; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 0.08; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 0; Feature: mm10_cpg_shores"
+
+CGI_Gene_permutation_enrichment(SE_sites_up, background.probes, permutation_number, plotmin, plotmax)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: enhancers_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_1to5kb"
+#[1] "Enrichment: 0.742; Depletion 1; Feature: mm10_genes_exonintronboundaries"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_introns"
+#[1] "Enrichment: 1; Depletion 0.644; Feature: mm10_genes_intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_enhancers_fantom"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_3UTRs"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_5UTRs"
+#[1] "Enrichment: 1; Depletion 1; Feature: enhancers_poised"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_exons"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intronexonboundaries"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_promoters"
+#[1] "Enrichment: 1; Depletion 1; Feature: promoters_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_lncrna_gencode"
+#[1] "Enrichment: 0.648; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_shores"
+```
+
+#Plotting genomic context enrichment for SE-only sites
+Split by increased vs decreased DNAhm.
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_CpG_Relations_update$anno))
+summary
+#               enhancers_active                enhancers_poised               mm10_genes_1to5kb                mm10_genes_3UTRs 
+#                           2319                             451                             758                             275 
+#               mm10_genes_5UTRs mm10_genes_exonintronboundaries                mm10_genes_exons           mm10_genes_intergenic 
+#                              9                            1634                             503                            5026 
+#mm10_genes_intronexonboundaries              mm10_genes_introns            mm10_genes_promoters             mm10_lncrna_gencode 
+#                            553                            5353                             141                              38 
+#               promoters_active 
+#                           2248 
+
+locations_RRBS <- data.frame(RRBS_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_RRBS$RRBS_fraction <- as.vector(apply(locations_RRBS, 2, function(x) x/sum(locations_RRBS$RRBS_count)))
+
+#getting the number of hits in each genomic context for SE downregulated sites
+locations <- Gene_CpG_Relations_update[Gene_CpG_Relations_update$site %in% SE_sites_down,"anno"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#               enhancers_active                enhancers_poised               mm10_genes_1to5kb                mm10_genes_3UTRs mm10_genes_exonintronboundaries 
+#                             27                               5                              35                               7                              89 
+#               mm10_genes_exons           mm10_genes_intergenic mm10_genes_intronexonboundaries              mm10_genes_introns            mm10_genes_promoters 
+#                             33                             284                              26                             158                               6 
+#            mm10_lncrna_gencode                promoters_active                mm10_genes_5UTRs 
+#                              2                              25                               0 
+
+rownames(locations_RRBS)[-which(rownames(locations_RRBS) %in% names(loc_summary))] #"mm10_genes_5UTRs"   
+loc_summary <- c(loc_summary, "mm10_genes_5UTRs"=0)
+
+#add to dataframe
+locations_RRBS <- locations_RRBS[match(names(loc_summary), rownames(locations_RRBS)),]
+locations_RRBS$real_count <- loc_summary + 0.1
+#replace 0's with 1 to avoid Inf calculations
+#locations_RRBS$real_count[locations_RRBS$real_count==0] <- 1
+locations_RRBS$real_fraction <- sapply(1:length(locations_RRBS$real_count), function(x) locations_RRBS$real_count[x]/sum(locations_RRBS$real_count))
+
+#caluclate fold change
+library(gtools)
+library(DescTools)
+locations_RRBS$fold_change <- sapply(1:nrow(locations_RRBS), function(x) foldchange(locations_RRBS$real_fraction[x], locations_RRBS$RRBS_fraction[x]))
+
+locations_norm_down <- locations_RRBS
+locations_norm_down$Name <- rownames(locations_RRBS)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("enhancers_poised", "enhancers_active", "promoters_active","mm10_enhancers_fantom","mm10_genes_1to5kb", "mm10_genes_promoters", "mm10_genes_5UTRs", "mm10_genes_exons", "mm10_genes_exonintronboundaries","mm10_genes_introns","mm10_genes_intronexonboundaries","mm10_genes_3UTRs","mm10_genes_intergenic", "mm10_lncrna_gencode"))
+locations_norm_down$DNAhm_change <- "Decrease"
+```
+
+#Calculating enrichment of hits by CGI context
+
+```{r CGI enrichment WT, eval=F}
+#calculating background numbers/normalization factor
+summary <- summary(as.factor(cpg_anno_cgi$anno))
+summary
+#  mm10_cpg_inter mm10_cpg_islands mm10_cpg_shelves  mm10_cpg_shores 
+#           16236              310              994             1768 
+CGI_RRBS <- as.data.frame(summary)
+colnames(CGI_RRBS) <- "RRBS_count"
+CGI_RRBS$RRBS_fraction <- as.vector(apply(CGI_RRBS, 2, function(x) x/sum(CGI_RRBS$RRBS_count)))
+
+#enrichment of hits in SE sites with decreased DNAhm
+CGI_summary <- summary(as.factor(cpg_anno_cgi[cpg_anno_cgi$site %in% SE_sites_down,"anno"]))
+CGI_summary
+#  mm10_cpg_inter mm10_cpg_islands mm10_cpg_shelves  mm10_cpg_shores 
+#             636                9               24               28 
+
+CGI_RRBS$real_count <- CGI_summary
+CGI_RRBS$real_fraction <- sapply(1:length(CGI_RRBS$real_count), function(x) CGI_RRBS$real_count[x]/sum(CGI_RRBS$real_count))
+
+#caluclate fold change
+CGI_RRBS$fold_change <- sapply(1:nrow(CGI_RRBS), function(x) foldchange(CGI_RRBS$real_fraction[x], CGI_RRBS$RRBS_fraction[x]))
+
+down_CGI_norm <- CGI_RRBS
+down_CGI_norm$Name <- rownames(CGI_RRBS)
+down_CGI_norm$Name <- reorder.factor(down_CGI_norm$Name, new.order=c("mm10_cpg_islands","mm10_cpg_shores","mm10_cpg_shelves","mm10_cpg_inter"))
+down_CGI_norm$DNAhm_change <- "Decrease"
+```
+
+#Plotting genomic context enrichment, sites with increased DNAhm (count)
+
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_CpG_Relations_update$anno))
+
+locations_RRBS <- data.frame(RRBS_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_RRBS$RRBS_fraction <- as.vector(apply(locations_RRBS, 2, function(x) x/sum(locations_RRBS$RRBS_count)))
+
+#getting the number of hits in each genomic context for SE upregulated sites
+locations <- Gene_CpG_Relations_update[Gene_CpG_Relations_update$site %in% SE_sites_up,"anno"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#               enhancers_active               mm10_genes_1to5kb mm10_genes_exonintronboundaries              mm10_genes_introns 
+#                              2                               1                               3                               4 
+
+rownames(locations_RRBS)[-which(rownames(locations_RRBS) %in% names(loc_summary))] 
+#[1] "enhancers_poised"                "mm10_genes_3UTRs"                "mm10_genes_5UTRs"                "mm10_genes_exons"               
+#[5] "mm10_genes_intergenic"           "mm10_genes_intronexonboundaries" "mm10_genes_promoters"            "mm10_lncrna_gencode"            
+#[9] "promoters_active"    
+loc_summary <- c(loc_summary, "enhancers_poised"=0,"mm10_genes_3UTRs"=0,"mm10_genes_5UTRs"=0,"mm10_genes_exons"=0,"mm10_genes_intergenic"=0,"mm10_genes_intronexonboundaries"=0,"mm10_genes_promoters"=0,"mm10_lncrna_gencode"=0,"promoters_active"=0)
+
+#add to dataframe
+locations_RRBS <- locations_RRBS[match(names(loc_summary), rownames(locations_RRBS)),]
+locations_RRBS$real_count <- loc_summary + 0.1
+
+locations_RRBS$real_fraction <- sapply(1:length(locations_RRBS$real_count), function(x) locations_RRBS$real_count[x]/sum(locations_RRBS$real_count))
+
+#caluclate fold change
+library(gtools)
+library(DescTools)
+locations_RRBS$fold_change <- sapply(1:nrow(locations_RRBS), function(x) foldchange(locations_RRBS$real_fraction[x], locations_RRBS$RRBS_fraction[x]))
+
+locations_norm_up <- locations_RRBS
+locations_norm_up$Name <- rownames(locations_RRBS)
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("enhancers_poised", "enhancers_active", "promoters_active","mm10_enhancers_fantom","mm10_genes_1to5kb", "mm10_genes_promoters", "mm10_genes_5UTRs", "mm10_genes_exons", "mm10_genes_exonintronboundaries","mm10_genes_introns","mm10_genes_intronexonboundaries","mm10_genes_3UTRs","mm10_genes_intergenic", "mm10_lncrna_gencode"))
+locations_norm_up$DNAhm_change <- "Increase"
+```
+
+#Calculating enrichment of hits by CGI context
+
+```{r CGI enrichment WT, eval=F}
+#calculating background numbers/normalization factor
+summary <- summary(as.factor(cpg_anno_cgi$anno))
+summary
+#  mm10_cpg_inter mm10_cpg_islands mm10_cpg_shelves  mm10_cpg_shores 
+#           16236              310              994             1768 
+CGI_RRBS <- as.data.frame(summary)
+colnames(CGI_RRBS) <- "RRBS_count"
+CGI_RRBS$RRBS_fraction <- as.vector(apply(CGI_RRBS, 2, function(x) x/sum(CGI_RRBS$RRBS_count)))
+
+#enrichment of hits in SE sites with Increased DNAhm
+CGI_summary <- summary(as.factor(cpg_anno_cgi[cpg_anno_cgi$site %in% SE_sites_up,"anno"]))
+CGI_summary
+#mm10_cpg_inter 
+#            10 
+
+rownames(CGI_RRBS)[-which(rownames(CGI_RRBS) %in% names(CGI_summary))] 
+#"mm10_cpg_islands" "mm10_cpg_shelves" "mm10_cpg_shores" 
+CGI_summary <- c(CGI_summary, "mm10_cpg_islands"=0,"mm10_cpg_shelves"=0,"mm10_cpg_shores"=0)
+
+#add to dataframe
+CGI_RRBS <- CGI_RRBS[match(names(CGI_summary), rownames(CGI_RRBS)),]
+CGI_RRBS$real_count <- CGI_summary
+
+up_CGI_norm <- CGI_RRBS
+up_CGI_norm$Name <- rownames(CGI_RRBS)
+up_CGI_norm$Name <- reorder.factor(up_CGI_norm$Name, new.order=c("mm10_cpg_islands","mm10_cpg_shores","mm10_cpg_shelves","mm10_cpg_inter"))
+up_CGI_norm$DNAhm_change <- "Increase"
+```
+
+#Plotting gene feature enrichment
+
+### Decreased DNAhm gene features (enrichment plot)
+```{r plot genomic enrichment, eval=F}
+min <- min(locations_norm_down$fold_change, down_CGI_norm$fold_change) - 1
+max <- max(locations_norm_down$fold_change, down_CGI_norm$fold_change) + 1
+
+library(ggplot2)
+
+#add significance from permutation
+#incr: none
+#dcr: enactive ***, enpoised ***, exonitnron ***, exon ***, intergenic ***, intron *, promactive ***
+rownames(locations_norm_down)
+locations_norm_down$sig <- as.factor(c("***","***",NA,NA,"***","***","***",NA,"*",NA,NA,"***",NA))
+
+ggplot(locations_norm_down, aes(x=Name, y=fold_change, fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("gray75", "gray48")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))  + 
+   geom_text(data = subset(locations_norm_down, fold_change >= 0), 
+      aes(Name, fold_change, group=DNAhm_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=4) +
+    geom_text(data = subset(locations_norm_down, fold_change < 0), 
+      aes(Name, fold_change, group=DNAhm_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=4)
+```
+
+### Decreased DNAhm CGI features (enrichment plot)
+```{r plot cgi enrichment, eval=F}
+#add significance from permutation
+#intergenic, island, shelf, shore
+
+#dcr: intergenic ***, shore ***
+#[1] "Enrichment: 0; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 0.08; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 0; Feature: mm10_cpg_shores"
+down_CGI_norm$Name
+down_CGI_norm$sig <- c("***",NA,NA,"***")
+
+ggplot(down_CGI_norm, aes(x=Name, y=fold_change, fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("gray75", "gray48")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("CpG Islands") + ylim(c(min,max))  + 
+   geom_text(data = subset(down_CGI_norm, fold_change >= 0), 
+      aes(Name, fold_change, group=DNAhm_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=4) +
+    geom_text(data = subset(down_CGI_norm, fold_change < 0), 
+      aes(Name, fold_change, group=DNAhm_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=4)
+```
+
+### Increased DNAhm gene features 
+
+```{r plot genomic enrichment, eval=F}
+##### count plot
+locations_norm_up$real_count <- locations_norm_up$real_count - 0.1
+ggplot(locations_norm_up, aes(x=Name, y=real_count, fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of CpGs") + scale_fill_manual(values=c("gray48")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features")
+
+##### fold change plot
+
+min <- min(locations_norm_up$fold_change) - 1
+max <- max(locations_norm_up$fold_change) + 1
+
+library(ggplot2)
+
+
+ggplot(locations_norm_up, aes(x=Name, y=fold_change, fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("gray48")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))
+```
+
+
+# Permuting overlaps for sites split by SE only, SE/EE and EE only
+```{r}
+##Sites only differentially methylated in SE ("rescue") - hypomethylated
+lm_results_EE <- read.csv("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/hydroxy/WTEE_TGEE/linear_model/auto/CpG/lm_WTEE_TGEE.csv")
+EE_sites <- lm_results_EE[lm_results_EE$threshold==TRUE & lm_results_EE$adjP<=0.05,"site"] #370
+EE_sites_down <- lm_results_EE[lm_results_EE$threshold==TRUE & lm_results_EE$DNAm_change=="Decrease" & lm_results_EE$adjP<=0.05,"site"] #366
+EE_sites_up <- lm_results_EE[lm_results_EE$threshold==TRUE & lm_results_EE$DNAm_change=="Increase" & lm_results_EE$adjP<=0.05,"site"] #4
+SE_sites <- lm_results[lm_results$threshold==TRUE & lm_results$adjP<=0.05,"site"]
+
+length(SE_down <- SE_sites_down[-which(SE_sites_down %in% EE_sites_down)]) #450
+CGI_Gene_permutation_enrichment(SE_down, background.probes, permutation_number, plotmin, plotmax)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 0; Feature: enhancers_active"
+#[1] "Enrichment: 1; Depletion 0.098; Feature: enhancers_poised"
+#[1] "Enrichment: 0.91; Depletion 1; Feature: mm10_genes_1to5kb"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_3UTRs"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_exonintronboundaries"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_exons"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intronexonboundaries"
+#[1] "Enrichment: 1; Depletion 0.504; Feature: mm10_genes_introns"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_promoters"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_lncrna_gencode"
+#[1] "Enrichment: 1; Depletion 0; Feature: promoters_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_enhancers_fantom"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_5UTRs"
+#[1] "Enrichment: 0; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 0.616; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 0; Feature: mm10_cpg_shores"
+
+length(SE_up <- SE_sites_up[-which(SE_sites_up %in% EE_sites_up)]) #9
+CGI_Gene_permutation_enrichment(SE_up, background.probes, permutation_number, plotmin, plotmax)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: enhancers_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_1to5kb"
+#[1] "Enrichment: 0.504; Depletion 1; Feature: mm10_genes_exonintronboundaries"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_introns"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_enhancers_fantom"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_3UTRs"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_5UTRs"
+#[1] "Enrichment: 1; Depletion 1; Feature: enhancers_poised"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_exons"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intronexonboundaries"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_promoters"
+#[1] "Enrichment: 1; Depletion 1; Feature: promoters_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_lncrna_gencode"
+#[1] "Enrichment: 0.8; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_shores"
+```
+
+#Plotting genomic context enrichment for SE-only sites
+Split by increased vs decreased DNAhm.
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_CpG_Relations_update$anno))
+summary
+#               enhancers_active                enhancers_poised               mm10_genes_1to5kb                mm10_genes_3UTRs                mm10_genes_5UTRs 
+#                           2319                             451                             758                             275                               9 
+#mm10_genes_exonintronboundaries                mm10_genes_exons           mm10_genes_intergenic mm10_genes_intronexonboundaries              mm10_genes_introns 
+#                           1634                             503                            5026                             553                            5353 
+#           mm10_genes_promoters             mm10_lncrna_gencode                promoters_active 
+#                            141                              38                            2248 
+
+locations_RRBS <- data.frame(RRBS_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_RRBS$RRBS_fraction <- as.vector(apply(locations_RRBS, 2, function(x) x/sum(locations_RRBS$RRBS_count)))
+
+#getting the number of hits in each genomic context for SE downregulated sites
+locations <- Gene_CpG_Relations_update[Gene_CpG_Relations_update$site %in% SE_down,"anno"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#               enhancers_active                enhancers_poised               mm10_genes_1to5kb                mm10_genes_3UTRs mm10_genes_exonintronboundaries 
+#                             20                               3                              24                               3                              59 
+#               mm10_genes_exons           mm10_genes_intergenic mm10_genes_intronexonboundaries              mm10_genes_introns            mm10_genes_promoters 
+#                             16                             177                              16                             108                               5 
+#            mm10_lncrna_gencode                promoters_active 
+#                              2                              17 
+
+rownames(locations_RRBS)[-which(rownames(locations_RRBS) %in% names(loc_summary))] #"mm10_genes_5UTRs"
+loc_summary <- c(loc_summary, "mm10_genes_5UTRs"=0)
+
+#add to dataframe
+locations_RRBS <- locations_RRBS[match(names(loc_summary), rownames(locations_RRBS)),]
+
+#add to dataframe
+locations_RRBS$real_count <- loc_summary + 0.1
+#replace 0's with 1 to avoid Inf calculations
+#locations_RRBS$real_count[locations_RRBS$real_count==0] <- 1
+locations_RRBS$real_fraction <- sapply(1:length(locations_RRBS$real_count), function(x) locations_RRBS$real_count[x]/sum(locations_RRBS$real_count))
+
+#caluclate fold change
+library(gtools)
+library(DescTools)
+locations_RRBS$fold_change <- sapply(1:nrow(locations_RRBS), function(x) foldchange(locations_RRBS$real_fraction[x], locations_RRBS$RRBS_fraction[x]))
+
+locations_norm_down <- locations_RRBS
+locations_norm_down$Name <- rownames(locations_RRBS)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("enhancers_poised", "enhancers_active", "promoters_active","mm10_enhancers_fantom","mm10_genes_1to5kb", "mm10_genes_promoters", "mm10_genes_5UTRs", "mm10_genes_exons", "mm10_genes_exonintronboundaries","mm10_genes_introns","mm10_genes_intronexonboundaries","mm10_genes_3UTRs","mm10_genes_intergenic", "mm10_lncrna_gencode"))
+locations_norm_down$DNAhm_change <- "Decrease"
+
+#mm10_enhancers_fantom fold change calculation is quite off even with offset, since there is only one annotation of this in the background; remove this category for plotting. In-house histone data is better for defining enhancers anyway.
+locations_norm_down <- locations_norm_down[-3,]
+```
+
+#Calculating enrichment of hits by CGI context
+
+```{r CGI enrichment WT, eval=F}
+#calculating background numbers/normalization factor
+summary <- summary(as.factor(cpg_anno_cgi$anno))
+#  mm10_cpg_inter mm10_cpg_islands mm10_cpg_shelves  mm10_cpg_shores 
+#           28035              657             1642             2854 
+CGI_RRBS <- as.data.frame(summary)
+colnames(CGI_RRBS) <- "RRBS_count"
+CGI_RRBS$RRBS_fraction <- as.vector(apply(CGI_RRBS, 2, function(x) x/sum(CGI_RRBS$RRBS_count)))
+
+#enrichment of hits in SE sites with decreased DNAhm
+CGI_summary <- summary(as.factor(cpg_anno_cgi[cpg_anno_cgi$site %in% SE_down,"anno"]))
+#  mm10_cpg_inter mm10_cpg_islands mm10_cpg_shelves  mm10_cpg_shores 
+#             406                7               18               19 
+
+CGI_RRBS$real_count <- CGI_summary
+CGI_RRBS$real_fraction <- sapply(1:length(CGI_RRBS$real_count), function(x) CGI_RRBS$real_count[x]/sum(CGI_RRBS$real_count))
+
+#caluclate fold change
+CGI_RRBS$fold_change <- sapply(1:nrow(CGI_RRBS), function(x) foldchange(CGI_RRBS$real_fraction[x], CGI_RRBS$RRBS_fraction[x]))
+
+down_CGI_norm <- CGI_RRBS
+down_CGI_norm$Name <- rownames(CGI_RRBS)
+down_CGI_norm$Name <- reorder.factor(down_CGI_norm$Name, new.order=c("mm10_cpg_islands","mm10_cpg_shores","mm10_cpg_shelves","mm10_cpg_inter"))
+down_CGI_norm$DNAhm_change <- "Decrease"
+```
+
+#Plotting genomic context enrichment, sites with increased DNAhm
+
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_CpG_Relations_update$anno))
+
+locations_RRBS <- data.frame(RRBS_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_RRBS$RRBS_fraction <- as.vector(apply(locations_RRBS, 2, function(x) x/sum(locations_RRBS$RRBS_count)))
+
+#getting the number of hits in each genomic context for SE upregulated sites
+locations <- Gene_CpG_Relations_update[Gene_CpG_Relations_update$site %in% SE_up,"anno"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#               enhancers_active               mm10_genes_1to5kb mm10_genes_exonintronboundaries              mm10_genes_introns 
+#                              2                               1                               3                               3 
+
+rownames(locations_RRBS)[-which(rownames(locations_RRBS) %in% names(loc_summary))] 
+#[1] "enhancers_poised"                "mm10_genes_3UTRs"                "mm10_genes_5UTRs"                "mm10_genes_exons"               
+#[5] "mm10_genes_intergenic"           "mm10_genes_intronexonboundaries" "mm10_genes_promoters"            "mm10_lncrna_gencode"            
+#[9] "promoters_active"    
+loc_summary <- c(loc_summary, "enhancers_poised"=0,"mm10_genes_3UTRs"=0,"mm10_genes_5UTRs"=0,"mm10_genes_exons"=0,"mm10_genes_intergenic"=0,"mm10_genes_intronexonboundaries"=0,"mm10_genes_promoters"=0,"mm10_lncrna_gencode"=0,"promoters_active"=0)
+
+#add to dataframe
+locations_RRBS <- locations_RRBS[match(names(loc_summary), rownames(locations_RRBS)),]
+locations_RRBS$real_count <- loc_summary + 0.1
+
+#add to dataframe
+locations_RRBS$real_count <- loc_summary + 0.1
+#replace 0's with 1 to avoid Inf calculations
+#locations_RRBS$real_count[locations_RRBS$real_count==0] <- 1
+locations_RRBS$real_fraction <- sapply(1:length(locations_RRBS$real_count), function(x) locations_RRBS$real_count[x]/sum(locations_RRBS$real_count))
+
+#caluclate fold change
+locations_RRBS$fold_change <- sapply(1:nrow(locations_RRBS), function(x) foldchange(locations_RRBS$real_fraction[x], locations_RRBS$RRBS_fraction[x]))
+
+locations_norm_up <- locations_RRBS
+locations_norm_up$Name <- rownames(locations_RRBS)
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("enhancers_poised", "enhancers_active", "promoters_active", "mm10_enhancers_fantom","mm10_genes_1to5kb", "mm10_genes_promoters", "mm10_genes_5UTRs", "mm10_genes_exons", "mm10_genes_exonintronboundaries","mm10_genes_introns","mm10_genes_intronexonboundaries","mm10_genes_3UTRs","mm10_genes_intergenic","mm10_lncrna_gencode"))
+locations_norm_up$DNAhm_change <- "Increase"
+
+#mm10_enhancers_fantom fold change calculation is quite off even with offset, since there is only one annotation of this in the background; remove this category for plotting. In-house histone data is better for defining enhancers anyway.
+locations_norm_up <- locations_norm_up[-3,]
+```
+
+#Calculating enrichment of hits by CGI context
+
+```{r CGI enrichment WT, eval=F}
+#calculating background numbers/normalization factor
+summary <- summary(as.factor(cpg_anno_cgi$anno))
+#  mm10_cpg_inter mm10_cpg_islands mm10_cpg_shelves  mm10_cpg_shores 
+#           28035              657             1642             2854 
+CGI_RRBS <- as.data.frame(summary)
+colnames(CGI_RRBS) <- "RRBS_count"
+CGI_RRBS$RRBS_fraction <- as.vector(apply(CGI_RRBS, 2, function(x) x/sum(CGI_RRBS$RRBS_count)))
+
+#enrichment of hits in SE sites with Increased DNAhm
+CGI_summary <- summary(as.factor(cpg_anno_cgi[cpg_anno_cgi$site %in% SE_up,"anno"]))
+#mm10_cpg_inter 
+#             9 
+
+rownames(CGI_RRBS)[-which(rownames(CGI_RRBS) %in% names(CGI_summary))] 
+#"mm10_cpg_islands" "mm10_cpg_shelves" "mm10_cpg_shores" 
+CGI_summary <- c(CGI_summary, "mm10_cpg_islands"=0,"mm10_cpg_shelves"=0,"mm10_cpg_shores"=0)
+
+#add to dataframe
+CGI_RRBS <- CGI_RRBS[match(names(CGI_summary), rownames(CGI_RRBS)),]
+CGI_RRBS$real_count <- CGI_summary
+CGI_RRBS$real_fraction <- sapply(1:length(CGI_RRBS$real_count), function(x) CGI_RRBS$real_count[x]/sum(CGI_RRBS$real_count))
+
+#caluclate fold change
+CGI_RRBS$fold_change <- sapply(1:nrow(CGI_RRBS), function(x) foldchange(CGI_RRBS$real_fraction[x], CGI_RRBS$RRBS_fraction[x]))
+
+up_CGI_norm <- CGI_RRBS
+up_CGI_norm$Name <- rownames(CGI_RRBS)
+up_CGI_norm$Name <- reorder.factor(up_CGI_norm$Name, new.order=c("mm10_cpg_islands","mm10_cpg_shores","mm10_cpg_shelves","mm10_cpg_inter"))
+up_CGI_norm$DNAhm_change <- "Increase"
+```
+
+#Plotting gene feature enrichment
+```{r plot genomic enrichment, eval=F}
+min <- min(locations_norm_down$fold_change) - 1
+max <- max(locations_norm_down$fold_change) + 1
+
+library(ggplot2)
+
+#add significance from permutation
+#dcr: enactive, exon-intron, intergenic, promactive
+locations_norm_down$sig <- as.factor(c( "***", rep(NA,2), "***",NA, "***", rep(NA,4),"***"))
+
+ggplot(locations_norm_down, aes(x=Name, y=fold_change, fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("gray75")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))  + 
+   geom_text(data = subset(locations_norm_down, fold_change >= 0), 
+      aes(Name, fold_change, group=DNAhm_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=4) +
+    geom_text(data = subset(locations_norm_down, fold_change < 0), 
+      aes(Name, fold_change, group=DNAhm_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=4)
+```
+![Gene features fold enrichment for SE-only DM sites](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/methdiff/hydroxy/BiSeq_site_specific/WTSE_TGSE/BH/SE_only_gene_features_ChIP.png)
+
+#Plotting CGI feature enrichment
+```{r plot cgi enrichment, eval=F}
+#add significance from permutation
+#intergenic, shore
+down_CGI_norm$sig <- as.factor(c("***",NA,NA,"***"))
+
+ggplot(down_CGI_norm, aes(x=Name, y=fold_change, fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("gray75", "gray48")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("CpG Islands") + ylim(c(min,max))  + 
+   geom_text(data = subset(down_CGI_norm, fold_change >= 0), 
+      aes(Name, fold_change, group=DNAhm_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=2) +
+    geom_text(data = subset(down_CGI_norm, fold_change < 0), 
+      aes(Name, fold_change, group=DNAhm_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=2)
+```
+![CpG islands fold enrichment for SE-only DM sites](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/methdiff/hydroxy/BiSeq_site_specific/WTSE_TGSE/BH/SE_only_CGI.png)
+
+```{r}
+##Sites only differentially methylated in SE ("rescue") - all
+length(SE_only <- SE_sites[-which(SE_sites %in% EE_sites)]) #1051
+CGI_Gene_permutation_enrichment(SE_only, background.probes, permutation_number, plotmin, plotmax)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 0.714; Feature: enhancers_active"
+#[1] "Enrichment: 1; Depletion 0.028; Feature: enhancers_poised"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_enhancers_fantom"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_1to5kb"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_3UTRs"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_5UTRs"
+#[1] "Enrichment: 0.056; Depletion 1; Feature: mm10_genes_exonintronboundaries"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_exons"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intronexonboundaries"
+#[1] "Enrichment: 1; Depletion 0.028; Feature: mm10_genes_introns"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_promoters"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_lncrna_gencode"
+#[1] "Enrichment: 1; Depletion 0.14; Feature: promoters_active"
+#[1] "Enrichment: 0.076; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 0.2; Depletion: 1; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 0.048; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 0.136; Feature: mm10_cpg_shores"
+
+#Similar pattern to overall
+
+##Pie chart of hits by context
+nrow(SE_hits_anno <- Gene_CpG_Relations_update[Gene_CpG_Relations_update$site %in% SE_only,])
+summary <- summary(as.factor(SE_hits_anno$anno))
+summary <- as.data.frame(summary)
+colnames(summary) <- "n"
+summary$fraction <- sapply(1:nrow(summary), function(x) summary$n[x]/sum(summary$n))
+
+Set3 <- brewer.pal("Set3", n=11)
+
+ggplot(summary, aes(x="",y=fraction,fill=rownames(summary))) + geom_bar(width=1,stat="identity") + theme_classic() + theme(axis.text.x=element_blank(), axis.title.x=element_blank(), axis.title.y=element_blank(), line=element_blank()) + coord_polar("y", start=0) + scale_fill_manual(values=Set3, name="Genomic Context")
+
+##Sites differentially methylated in SE and EE - hypomethylated
+length(SE_EE_down <- SE_sites_down[which(SE_sites_down %in% EE_sites_down)]) #247
+CGI_Gene_permutation_enrichment(SE_EE_down, background.probes, permutation_number, plotmin, plotmax)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 0; Feature: enhancers_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: enhancers_poised"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_1to5kb"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_3UTRs"
+#[1] "Enrichment: 0.434; Depletion 1; Feature: mm10_genes_exonintronboundaries"
+#[1] "Enrichment: 0.014; Depletion 1; Feature: mm10_genes_exons"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intronexonboundaries"
+#[1] "Enrichment: 1; Depletion 0.098; Feature: mm10_genes_introns"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_promoters"
+#[1] "Enrichment: 1; Depletion 0; Feature: promoters_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_enhancers_fantom"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_5UTRs"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_lncrna_gencode"
+#[1] "Enrichment: 0; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 1; Depletion: 0.904; Feature: mm10_cpg_islands"
+#1] "Enrichment: 1; Depletion: 0.112; Feature: mm10_cpg_shelves"
+#1] "Enrichment: 1; Depletion: 0; Feature: mm10_cpg_shores"
+
+#These sites are enriched for exon-intron boundaries, exons, intergenic regions, and open seas; they are depleted for active and poised enhancers, active promoters, introns, and cpg shores
+
+##Sites differentially methylated in SE and EE - hypermethylated
+length(SE_EE_up <- SE_sites_up[which(SE_sites_up %in% EE_sites_up)]) #1
+```
+
+#Plotting genomic context enrichment for SE/EE shared sites
+Split by increased vs decreased DNAhm.
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_CpG_Relations_update$anno))
+
+locations_RRBS <- data.frame(RRBS_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_RRBS$RRBS_fraction <- as.vector(apply(locations_RRBS, 2, function(x) x/sum(locations_RRBS$RRBS_count)))
+
+#getting the number of hits in each genomic context for SE downregulated sites
+locations <- Gene_CpG_Relations_update[Gene_CpG_Relations_update$site %in% SE_EE_down,"anno"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#               enhancers_active                enhancers_poised               mm10_genes_1to5kb                mm10_genes_3UTRs mm10_genes_exonintronboundaries 
+#                              7                               2                              11                               4                              30 
+#               mm10_genes_exons           mm10_genes_intergenic mm10_genes_intronexonboundaries              mm10_genes_introns            mm10_genes_promoters 
+#                             17                             107                              10                              50                               1 
+#               promoters_active 
+ #                             8
+
+#add to dataframe
+unique(Gene_CpG_Relations_update$anno[-which(Gene_CpG_Relations_update$anno %in% names(loc_summary))])
+#"mm10_lncrna_gencode" "mm10_genes_5UTRs" 
+loc_summary <- c(loc_summary, "mm10_genes_5UTRs"=0, "mm10_lncrna_gencode"=0)
+locations_RRBS <- locations_RRBS[match(names(loc_summary), rownames(locations_RRBS)),]
+locations_RRBS$real_count <- loc_summary + 0.1
+#replace 0's with 1 to avoid Inf calculations
+#locations_RRBS$real_count[locations_RRBS$real_count==0] <- 1
+locations_RRBS$real_fraction <- sapply(1:length(locations_RRBS$real_count), function(x) locations_RRBS$real_count[x]/sum(locations_RRBS$real_count))
+
+#caluclate fold change
+locations_RRBS$fold_change <- sapply(1:nrow(locations_RRBS), function(x) foldchange(locations_RRBS$real_fraction[x], locations_RRBS$RRBS_fraction[x]))
+
+locations_norm_down <- locations_RRBS
+locations_norm_down$Name <- rownames(locations_RRBS)
+
+locations_norm_down$Name <- gsub("mm10_genes_introns", "Intron", gsub("mm10_genes_1to5kb", "1to5kb", gsub("enhancers_poised", "Poised Enhancer", gsub("mm10_genes_exonintronboundaries", "Exon-Intron Boundary", gsub("mm10_genes_exons", "Exon", gsub("mm10_genes_intronexonboundaries", "Intron-Exon Boundary", gsub("enhancers_active", "Active Enhancer", gsub("mm10_genes_promoters", "Promoter", gsub("promoters_active", "Active Promoter", gsub("mm10_genes_3UTRs", "3' UTR", gsub("mm10_genes_intergenic", "Intergenic", gsub("mm10_lncrna_gencode", "lncRNA", gsub("mm10_genes_5UTRs", "5' UTR", gsub("mm10_enhancers_fantom", "FANTOM5 Enhancer", locations_norm_down$Name))))))))))))))
+
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "FANTOM5 Enhancer","1to5kb", "Promoter", "5' UTR", "Exon", "Exon-Intron Boundary","Intron","Intron-Exon Boundary","3' UTR","Intergenic", "lncRNA"))
+
+locations_norm_down$DNAhm_change <- "Decrease"
+```
+
+#Calculating enrichment of hits by CGI context
+
+```{r CGI enrichment WT, eval=F}
+#calculating background numbers/normalization factor
+summary <- summary(as.factor(cpg_anno_cgi$anno))
+#  mm10_cpg_inter mm10_cpg_islands mm10_cpg_shelves  mm10_cpg_shores 
+#           28035              657             1642             2854 
+CGI_RRBS <- as.data.frame(summary)
+colnames(CGI_RRBS) <- "RRBS_count"
+CGI_RRBS$RRBS_fraction <- as.vector(apply(CGI_RRBS, 2, function(x) x/sum(CGI_RRBS$RRBS_count)))
+
+#enrichment of hits in SE sites with decreased DNAhm
+CGI_summary <- summary(as.factor(cpg_anno_cgi[cpg_anno_cgi$site %in% SE_EE_down,"anno"]))
+#  mm10_cpg_inter mm10_cpg_islands mm10_cpg_shelves  mm10_cpg_shores 
+#             230                2                6                9
+
+CGI_RRBS$real_count <- CGI_summary
+CGI_RRBS$real_fraction <- sapply(1:length(CGI_RRBS$real_count), function(x) CGI_RRBS$real_count[x]/sum(CGI_RRBS$real_count))
+
+#caluclate fold change
+CGI_RRBS$fold_change <- sapply(1:nrow(CGI_RRBS), function(x) foldchange(CGI_RRBS$real_fraction[x], CGI_RRBS$RRBS_fraction[x]))
+
+down_CGI_norm <- CGI_RRBS
+down_CGI_norm$Name <- rownames(CGI_RRBS)
+down_CGI_norm$Name <- reorder.factor(down_CGI_norm$Name, new.order=c("mm10_cpg_islands","mm10_cpg_shores","mm10_cpg_shelves","mm10_cpg_inter"))
+down_CGI_norm$DNAhm_change <- "Decrease"
+```
+
+
+#Plotting gene feature enrichment
+I will only plot fold enrichments for sites with decreased DNAhm in TG mice, since there is only 1 that had increased DNAhm in both environments. 
+```{r plot genomic enrichment, eval=F}
+###fold change plot (decreased DNAhm)
+min <- min(locations_norm_down$fold_change) - 1
+max <- max(locations_norm_down$fold_change) + 1
+
+#add significance from permutation
+#enactive ***, exon *, intergenic ***, promactive ***
+rownames(locations_norm_down)
+# [1] "enhancers_active"                "enhancers_poised"                "mm10_genes_1to5kb"               "mm10_genes_3UTRs"               
+# [5] "mm10_genes_exonintronboundaries" "mm10_genes_exons"                "mm10_genes_intergenic"           "mm10_genes_intronexonboundaries"
+# [9] "mm10_genes_introns"              "mm10_genes_promoters"            "promoters_active"                "mm10_genes_5UTRs"               
+#[13] "mm10_lncrna_gencode" 
+locations_norm_down$sig <- as.factor(c("***", rep(NA,4),  "*", "***", NA, NA, NA, "***", NA,NA))
+
+ggplot(locations_norm_down, aes(x=Name, y=fold_change,fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("#9cb09c")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))  + 
+   geom_text(data = subset(locations_norm_down, fold_change >= 0), 
+      aes(Name, fold_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=4) +
+    geom_text(data = subset(locations_norm_down, fold_change < 0), 
+      aes(Name, fold_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=4)
+
+###counts plot (increased DNAhm)
+min <- 0
+max <- max(locations_norm_up$real_count, up_CGI_norm$real_count)
+
+ggplot(locations_norm_up, aes(x=Name, y=real_count,fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of DHM Cytosines") + scale_fill_manual(values=c("plum4")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))
+```
+![Gene features fold enrichment for SE and EE DM sites with decreased DNAhm](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/methdiff/hydroxy/BiSeq_site_specific/WTSE_TGSE/BH/SE_EE_down_gene_features_ChIP.png)
+
+![Gene features counts for SE and EE DM sites with increased DNAhm](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/methdiff/hydroxy/BiSeq_site_specific/WTSE_TGSE/BH/SE_EE_up_gene_features_ChIP.png)
+
+#Plotting CGI feature enrichment
+```{r plot cgi enrichment, eval=F}
+###fold change plot (decreased DNAhm)
+min <- min(locations_norm_down$fold_change, down_CGI_norm$fold_change, down_chrom_norm_WTSE$fold_change, down_chrom_norm_TGSE$fold_change, down_chrom_norm_WTEE$fold_change, down_chrom_norm_TGEE$fold_change) - 1
+max <- max(locations_norm_down$fold_change, down_CGI_norm$fold_change, down_chrom_norm_WTSE$fold_change, down_chrom_norm_TGSE$fold_change, down_chrom_norm_WTEE$fold_change, down_chrom_norm_TGEE$fold_change) + 1
+
+#add significance from permutation
+#intergenic, island, shelf, shore
+down_CGI_norm$sig <- as.factor(c("***",NA,NA,"***")
+
+ggplot(down_CGI_norm, aes(x=Name, y=fold_change, fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("plum2")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("CpG Islands") + ylim(c(min,max))  + 
+   geom_text(data = subset(down_CGI_norm, fold_change >= 0), 
+      aes(Name, fold_change, group=DNAhm_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=2) +
+    geom_text(data = subset(down_CGI_norm, fold_change < 0), 
+      aes(Name, fold_change, group=DNAhm_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=2)
+
+###counts plot (increased DNAhm)
+min <- 0
+max <- max(up_CGI_norm$real_count, up_CGI_norm$real_count, up_chrom_norm_WTSE$real_count, up_chrom_norm_TGSE$real_count)
+
+ggplot(up_CGI_norm, aes(x=Name, y=real_count,fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of DHM Cytosines") + scale_fill_manual(values=c("plum4")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("CpG Islands") + ylim(c(min,max))
+```
+![CpG islands fold enrichment for SE/EE shared DM sites](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/methdiff/hydroxy/BiSeq_site_specific/WTSE_TGSE/BH/SE_EE_down_CGI.png)
+
+![CpG islands counts for SE/EE shared DM sites](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/methdiff/hydroxy/BiSeq_site_specific/WTSE_TGSE/BH/SE_EE_up_CGI.png)
+# Genes with differential DNAhm, H3K4me1, and H3K27ac in SE
+```{r}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/genes_DNAhm_H3K4me1_H3K27ac.RData")
+#"set16" (14 genes)
+
+lm_results <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/hydroxy/WTSE_TGSE/linear_model/CpG/lm_WTSE_TGSE.csv")
+SE_set16 <- lm_results[lm_results$adjP<=0.15 & abs(lm_results$DB)>=0.1 & lm_results$gene %in% set16,] #14 CpGs
+write.csv(SE_set16, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/SE_DNAhm_with_H3K4me1_H3K27ac.csv", row.names=F)
+
+##DHM sites with DNAhm loss
+length(SE_set16_down <- SE_set16[SE_set16$DB<0,"site"]) #14 - all of them have decresed DNAhm
+CGI_Gene_permutation_enrichment(SE_set16_down, background.probes=lm_results$site, permutation_number, plotmin, plotmax)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: enhancers_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: enhancers_poised"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_3UTRs"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_exonintronboundaries"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intronexonboundaries"
+#[1] "Enrichment: 1; Depletion 0.168; Feature: mm10_genes_intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_enhancers_fantom"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_1to5kb"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_5UTRs"
+#[1] "Enrichment: 1; Depletion 0.14; Feature: mm10_genes_introns"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_exons"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_promoters"
+#[1] "Enrichment: 1; Depletion 1; Feature: promoters_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_lncrna_gencode"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 0.836; Depletion: 1; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_shores"
+```
+
+#Plotting genomic context enrichment
+Split by increased vs decreased DNAhm.
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_CpG_Relations_update$anno))
+
+locations_RRBS <- data.frame(RRBS_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_RRBS$RRBS_fraction <- as.vector(apply(locations_RRBS, 2, function(x) x/sum(locations_RRBS$RRBS_count)))
+
+#getting the number of hits in each genomic context for SE downregulated sites
+locations <- Gene_CpG_Relations_update[Gene_CpG_Relations_update$site %in% SE_set16_down,"anno"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#               enhancers_active                enhancers_poised                mm10_genes_3UTRs mm10_genes_exonintronboundaries 
+#                              1                               1                               4                               7 
+#mm10_genes_intronexonboundaries 
+                              1 
+
+rownames(locations_RRBS)[-which(rownames(locations_RRBS) %in% names(loc_summary))] #    [1] "mm10_genes_1to5kb"     "mm10_genes_5UTRs"      "mm10_genes_exons"      "mm10_genes_intergenic" "mm10_genes_introns"    "mm10_genes_promoters" 
+#[7] "mm10_lncrna_gencode"   "promoters_active"                          
+loc_summary <- c(loc_summary, "mm10_genes_1to5kb" =0, "mm10_genes_5UTRs" =0,"mm10_genes_exons" =0,"mm10_genes_intergenic" =0, "mm10_genes_introns" =0,    "mm10_genes_promoters"  =0,"mm10_lncrna_gencode" =0,"promoters_active"  =0)
+loc_summary <- loc_summary[match(rownames(locations_RRBS), names(loc_summary))]
+all(names(loc_summary)==rownames(locations_RRBS)) #TRUE
+                              
+#add to dataframe
+locations_RRBS$real_count <- loc_summary 
+
+locations_norm_down <- locations_RRBS
+locations_norm_down$Name <- rownames(locations_RRBS)
+
+locations_norm_down$Name <- gsub("mm10_genes_introns", "Intron", gsub("mm10_genes_1to5kb", "1to5kb", gsub("enhancers_poised", "Poised Enhancer", gsub("mm10_genes_exonintronboundaries", "Exon-Intron Boundary", gsub("mm10_genes_exons", "Exon", gsub("mm10_genes_intronexonboundaries", "Intron-Exon Boundary", gsub("enhancers_active", "Active Enhancer", gsub("mm10_genes_promoters", "Promoter", gsub("promoters_active", "Active Promoter", gsub("mm10_genes_3UTRs", "3' UTR", gsub("mm10_genes_intergenic", "Intergenic", gsub("mm10_lncrna_gencode", "lncRNA", gsub("mm10_genes_5UTRs", "5' UTR", gsub("mm10_enhancers_fantom", "FANTOM5 Enhancer", locations_norm_down$Name))))))))))))))
+
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "FANTOM5 Enhancer","1to5kb", "Promoter", "5' UTR", "Exon", "Exon-Intron Boundary","Intron","Intron-Exon Boundary","3' UTR","Intergenic", "lncRNA"))
+
+locations_norm_down$DNAhm_change <- "Decrease"
+```
+
+#Plotting gene feature enrichment
+I will only plot fold enrichments for sites with decreased DNAhm in TG mice, since there are only 7 that had increased DNAhm in both environments. The increased DNAhm sites will be plotted separately using counts.
+```{r plot genomic enrichment, eval=F}
+###fold change plot (decreased DNAhm)
+min <- 0
+max <- max(locations_norm_down$real_count) + 1
+
+#add significance from permutation
+#3' UTR ***, exon-intron ***
+rownames(locations_norm_down)
+# [1] "enhancers_active"                "enhancers_poised"                "mm10_genes_1to5kb"               "mm10_genes_3UTRs"               
+# [5] "mm10_genes_exonintronboundaries" "mm10_genes_exons"                "mm10_genes_intergenic"           "mm10_genes_intronexonboundaries"
+# [9] "mm10_genes_introns"              "mm10_genes_promoters"            "mm10_lncrna_gencode"             "promoters_active"               
+#[13] "mm10_genes_5UTRs"   
+locations_norm_down$sig <- as.factor(c(NA,NA,NA,"***",NA,"***",rep(NA,7)))
+
+ggplot(locations_norm_down, aes(x=Name, y=real_count,fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of CpGs") + scale_fill_manual(values=c("gray75")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))  + 
+   geom_text(data = locations_norm_down, 
+      aes(Name, real_count, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=4)
+
+###counts plot (increased DNAhm)
+min <- 0
+max <- max(locations_norm_up$real_count, up_CGI_norm$real_count)
+
+ggplot(locations_norm_up, aes(x=Name, y=real_count,fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of DHM Cytosines") + scale_fill_manual(values=c("plum4")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))
+```
+![Gene features fold enrichment for SE and EE DM sites with decreased DNAhm](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/methdiff/hydroxy/BiSeq_site_specific/WTSE_TGSE/BH/SE_EE_down_gene_features_ChIP.png)
+
+![Gene features counts for SE and EE DM sites with increased DNAhm](/home/BCRICWH.LAN/sschaffner/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/SNCA_OE/Hippocampus/12m_EE/methdiff/hydroxy/BiSeq_site_specific/WTSE_TGSE/BH/SE_EE_up_gene_features_ChIP.png)
+# Genes with differential DNAhm, H3K4me1, and H3K27ac in EE
+```{r}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/genes_DNAhm_H3K4me1_H3K27ac_EE.RData")
+#"set14" (11 genes)
+
+lm_results <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/hydroxy/WTEE_TGEE/linear_model/CpG/lm_WTEE_TGEE.csv")
+EE_set14 <- lm_results[lm_results$adjP<=0.15 & abs(lm_results$DB)>=0.1 & lm_results$gene %in% set14,] #10 CpGs
+write.csv(EE_set14, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/EE_DNAhm_with_H3K4me1_H3K27ac.csv", row.names=F)
+
+##DHM sites with DNAhm loss
+length(EE_set14_down <- EE_set14[EE_set14$DB<0,"site"]) #9
+CGI_Gene_permutation_enrichment(EE_set14_down, background.probes=lm_results$site, permutation_number, plotmin, plotmax)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 0.07; Depletion 1; Feature: mm10_genes_3UTRs"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_exonintronboundaries"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intronexonboundaries"
+#[1] "Enrichment: 1; Depletion 0.784; Feature: mm10_genes_intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_enhancers_fantom"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_1to5kb"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_5UTRs"
+#[1] "Enrichment: 1; Depletion 0.812; Feature: mm10_genes_introns"
+#[1] "Enrichment: 1; Depletion 1; Feature: enhancers_poised"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_exons"
+#[1] "Enrichment: 1; Depletion 1; Feature: enhancers_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_promoters"
+#[1] "Enrichment: 1; Depletion 1; Feature: promoters_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_lncrna_gencode"
+#[1] "Enrichment: 0.924; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_shores"
+
+length(EE_set14_up <- EE_set14[EE_set14$DB>0,"site"]) #1
+```
+
+#Plotting genomic context enrichment
+Split by increased vs decreased DNAhm.
+
+### Decreased DNAhm
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_CpG_Relations_update$anno))
+
+locations_RRBS <- data.frame(RRBS_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_RRBS$RRBS_fraction <- as.vector(apply(locations_RRBS, 2, function(x) x/sum(locations_RRBS$RRBS_count)))
+
+#getting the number of hits in each genomic context for SE downregulated sites
+locations <- Gene_CpG_Relations_update[Gene_CpG_Relations_update$site %in% EE_set14_down,"anno"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#               mm10_genes_3UTRs mm10_genes_exonintronboundaries 
+#                              2                               6 
+#mm10_genes_intronexonboundaries 
+#                              1 
+
+rownames(locations_RRBS)[-which(rownames(locations_RRBS) %in% names(loc_summary))] 
+# [1] "enhancers_active"      "enhancers_poised"      "mm10_genes_1to5kb"    
+# [4] "mm10_genes_5UTRs"      "mm10_genes_exons"      "mm10_genes_intergenic"
+# [7] "mm10_genes_introns"    "mm10_genes_promoters"  "mm10_lncrna_gencode"  
+#[10] "promoters_active"                          
+loc_summary <- c(loc_summary, "enhancers_active"=0, "enhancers_poised"=0, "mm10_genes_1to5kb" =0, "mm10_genes_5UTRs" =0,"mm10_genes_exons" =0,"mm10_genes_intergenic" =0, "mm10_genes_introns" =0,    "mm10_genes_promoters"  =0,"mm10_lncrna_gencode" =0,"promoters_active"  =0)
+loc_summary <- loc_summary[match(rownames(locations_RRBS), names(loc_summary))]
+all(names(loc_summary)==rownames(locations_RRBS)) #TRUE
+                              
+#add to dataframe
+locations_RRBS$real_count <- loc_summary 
+
+locations_norm_down <- locations_RRBS
+locations_norm_down$Name <- rownames(locations_RRBS)
+
+locations_norm_down$Name <- gsub("mm10_genes_introns", "Intron", gsub("mm10_genes_1to5kb", "1to5kb", gsub("enhancers_poised", "Poised Enhancer", gsub("mm10_genes_exonintronboundaries", "Exon-Intron Boundary", gsub("mm10_genes_exons", "Exon", gsub("mm10_genes_intronexonboundaries", "Intron-Exon Boundary", gsub("enhancers_active", "Active Enhancer", gsub("mm10_genes_promoters", "Promoter", gsub("promoters_active", "Active Promoter", gsub("mm10_genes_3UTRs", "3' UTR", gsub("mm10_genes_intergenic", "Intergenic", gsub("mm10_lncrna_gencode", "lncRNA", gsub("mm10_genes_5UTRs", "5' UTR", gsub("mm10_enhancers_fantom", "FANTOM5 Enhancer", locations_norm_down$Name))))))))))))))
+
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "FANTOM5 Enhancer","1to5kb", "Promoter", "5' UTR", "Exon", "Exon-Intron Boundary","Intron","Intron-Exon Boundary","3' UTR","Intergenic", "lncRNA"))
+
+locations_norm_down$DNAhm_change <- "Decrease"
+```
+
+##Increased DNAhm
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_CpG_Relations_update$anno))
+
+locations_RRBS <- data.frame(RRBS_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_RRBS$RRBS_fraction <- as.vector(apply(locations_RRBS, 2, function(x) x/sum(locations_RRBS$RRBS_count)))
+
+#getting the number of hits in each genomic context for SE upregulated sites
+locations <- Gene_CpG_Relations_update[Gene_CpG_Relations_update$site %in% EE_set14_up,"anno"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#mm10_genes_exonintronboundaries 
+#                              1 
+
+rownames(locations_RRBS)[-which(rownames(locations_RRBS) %in% names(loc_summary))] 
+# [1] "enhancers_active"                "enhancers_poised"               
+# [3] "mm10_genes_1to5kb"               "mm10_genes_3UTRs"               
+# [5] "mm10_genes_5UTRs"                "mm10_genes_exons"               
+# [7] "mm10_genes_intergenic"           "mm10_genes_intronexonboundaries"
+# [9] "mm10_genes_introns"              "mm10_genes_promoters"           
+#[11] "mm10_lncrna_gencode"             "promoters_active"                             
+loc_summary <- c(loc_summary, "enhancers_active"=0, "enhancers_poised"=0, "mm10_genes_1to5kb" =0, "mm10_genes_3UTRs"=0, "mm10_genes_5UTRs" =0,"mm10_genes_exons" =0,"mm10_genes_intergenic" =0, "mm10_genes_intronexonboundaries"=0, "mm10_genes_introns" =0,    "mm10_genes_promoters"  =0,"mm10_lncrna_gencode" =0,"promoters_active"  =0)
+loc_summary <- loc_summary[match(rownames(locations_RRBS), names(loc_summary))]
+all(names(loc_summary)==rownames(locations_RRBS)) #TRUE
+                              
+#add to dataframe
+locations_RRBS$real_count <- loc_summary 
+
+locations_norm_up <- locations_RRBS
+locations_norm_up$Name <- rownames(locations_RRBS)
+
+locations_norm_up$Name <- gsub("mm10_genes_introns", "Intron", gsub("mm10_genes_1to5kb", "1to5kb", gsub("enhancers_poised", "Poised Enhancer", gsub("mm10_genes_exonintronboundaries", "Exon-Intron Boundary", gsub("mm10_genes_exons", "Exon", gsub("mm10_genes_intronexonboundaries", "Intron-Exon Boundary", gsub("enhancers_active", "Active Enhancer", gsub("mm10_genes_promoters", "Promoter", gsub("promoters_active", "Active Promoter", gsub("mm10_genes_3UTRs", "3' UTR", gsub("mm10_genes_intergenic", "Intergenic", gsub("mm10_lncrna_gencode", "lncRNA", gsub("mm10_genes_5UTRs", "5' UTR", gsub("mm10_enhancers_fantom", "FANTOM5 Enhancer", locations_norm_up$Name))))))))))))))
+
+locations_norm_up$Name <- reorder.factor(locations_norm_up$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "FANTOM5 Enhancer","1to5kb", "Promoter", "5' UTR", "Exon", "Exon-Intron Boundary","Intron","Intron-Exon Boundary","3' UTR","Intergenic", "lncRNA"))
+
+locations_norm_up$DNAhm_change <- "Increase"
+```
+
+#Plotting counts
+```{r plot genomic enrichment, eval=F}
+locations_norm <- rbind(locations_norm_down, locations_norm_up)
+
+###fold change plot (decreased DNAhm)
+min <- 0
+max <- max(locations_norm$real_count) + 1
+
+#add significance from permutation
+#exon-intron ***
+rownames(locations_norm)
+
+locations_norm$sig <- as.factor(c(rep(NA,5),"***",rep(NA,20)))
+
+ggplot(locations_norm, aes(x=Name, y=real_count,fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of CpGs") + scale_fill_manual(values=c("palegreen2","palegreen4")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))  + 
+   geom_text(data = locations_norm, 
+      aes(Name, real_count, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=4)
+
+###counts plot (increased DNAhm)
+min <- 0
+max <- max(locations_norm_up$real_count, up_CGI_norm$real_count)
+
+ggplot(locations_norm_up, aes(x=Name, y=real_count,fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of DHM Cytosines") + scale_fill_manual(values=c("plum4")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))
+```
+
+# Genes with differential DNAhm, H3K4me1, and H3K4me3 in EE
+```{r}
+load("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/genes_H3K4me1_DNAhm_H3K4me3_EE.RData")
+#"set6" (3 genes)
+
+lm_results <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/hydroxy/WTEE_TGEE/linear_model/CpG/lm_WTEE_TGEE.csv")
+EE_set6 <- lm_results[lm_results$adjP<=0.15 & abs(lm_results$DB)>=0.1 & lm_results$gene %in% set6,] #4 CpGs
+write.csv(EE_set6, file="/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/8-multi_omic_integration/overlap/EE_DNAhm_with_H3K4me1_H3K4me3.csv", row.names=F)
+
+##DHM sites with DNAhm loss
+length(EE_set6_down <- EE_set6[EE_set6$DB<0,"site"]) #4
+CGI_Gene_permutation_enrichment(EE_set6_down, background.probes=lm_results$site, permutation_number, plotmin, plotmax)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: enhancers_poised"
+#[1] "Enrichment: 0.014; Depletion 1; Feature: mm10_genes_exonintronboundaries"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_enhancers_fantom"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_1to5kb"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_3UTRs"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_5UTRs"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_introns"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_exons"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intronexonboundaries"
+#[1] "Enrichment: 1; Depletion 1; Feature: enhancers_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_promoters"
+#[1] "Enrichment: 1; Depletion 1; Feature: promoters_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_lncrna_gencode"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_shores"
+```
+
+#Plotting genomic context enrichment
+Split by increased vs decreased DNAhm.
+
+### Decreased DNAhm
+```{r genomic enrichment WT, eval=F}
+#Plot fold change across genomic contexts
+
+#background
+summary <- summary(as.factor(Gene_CpG_Relations_update$anno))
+
+locations_RRBS <- data.frame(RRBS_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_RRBS$RRBS_fraction <- as.vector(apply(locations_RRBS, 2, function(x) x/sum(locations_RRBS$RRBS_count)))
+
+#getting the number of hits in each genomic context for SE downregulated sites
+locations <- Gene_CpG_Relations_update[Gene_CpG_Relations_update$site %in% EE_set6_down,"anno"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#               enhancers_poised mm10_genes_exonintronboundaries 
+#                              1                               3 
+
+rownames(locations_RRBS)[-which(rownames(locations_RRBS) %in% names(loc_summary))] 
+# [1] "enhancers_active"                "mm10_genes_1to5kb"              
+# [3] "mm10_genes_3UTRs"                "mm10_genes_5UTRs"               
+# [5] "mm10_genes_exons"                "mm10_genes_intergenic"          
+# [7] "mm10_genes_intronexonboundaries" "mm10_genes_introns"             
+# [9] "mm10_genes_promoters"            "mm10_lncrna_gencode"            
+#[11] "promoters_active"                           
+loc_summary <- c(loc_summary, "enhancers_active"=0, "mm10_genes_1to5kb"=0,"mm10_genes_3UTRs"=0, "mm10_genes_5UTRs" =0,"mm10_genes_exons" =0,"mm10_genes_intergenic" =0, "mm10_genes_intronexonboundaries"=0, "mm10_genes_introns" =0,    "mm10_genes_promoters"  =0,"mm10_lncrna_gencode" =0,"promoters_active"  =0)
+loc_summary <- loc_summary[match(rownames(locations_RRBS), names(loc_summary))]
+all(names(loc_summary)==rownames(locations_RRBS)) #TRUE
+                              
+#add to dataframe
+locations_RRBS$real_count <- loc_summary 
+
+locations_norm_down <- locations_RRBS
+locations_norm_down$Name <- rownames(locations_RRBS)
+
+locations_norm_down$Name <- gsub("mm10_genes_introns", "Intron", gsub("mm10_genes_1to5kb", "1to5kb", gsub("enhancers_poised", "Poised Enhancer", gsub("mm10_genes_exonintronboundaries", "Exon-Intron Boundary", gsub("mm10_genes_exons", "Exon", gsub("mm10_genes_intronexonboundaries", "Intron-Exon Boundary", gsub("enhancers_active", "Active Enhancer", gsub("mm10_genes_promoters", "Promoter", gsub("promoters_active", "Active Promoter", gsub("mm10_genes_3UTRs", "3' UTR", gsub("mm10_genes_intergenic", "Intergenic", gsub("mm10_lncrna_gencode", "lncRNA", gsub("mm10_genes_5UTRs", "5' UTR", gsub("mm10_enhancers_fantom", "FANTOM5 Enhancer", locations_norm_down$Name))))))))))))))
+
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("Poised Enhancer", "Active Enhancer", "Active Promoter", "FANTOM5 Enhancer","1to5kb", "Promoter", "5' UTR", "Exon", "Exon-Intron Boundary","Intron","Intron-Exon Boundary","3' UTR","Intergenic", "lncRNA"))
+
+locations_norm_down$DNAhm_change <- "Decrease"
+```
+
+
+#Plotting counts
+```{r plot genomic enrichment, eval=F}
+###fold change plot (decreased DNAhm)
+min <- 0
+max <- max(locations_norm_down$real_count) + 1
+
+#add significance from permutation
+#exon-intron *
+rownames(locations_norm_down)
+
+locations_norm_down$sig <- as.factor(c(rep(NA,5),"*",rep(NA,7)))
+
+ggplot(locations_norm_down, aes(x=Name, y=real_count,fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of CpGs") + scale_fill_manual(values=c("palegreen2","palegreen4")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))  + 
+   geom_text(data = locations_norm_down, 
+      aes(Name, real_count, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=4)
+
+###counts plot (increased DNAhm)
+min <- 0
+max <- max(locations_norm_up$real_count, up_CGI_norm$real_count)
+
+ggplot(locations_norm_up, aes(x=Name, y=real_count,fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Number of DHM Cytosines") + scale_fill_manual(values=c("plum4")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))
+```
+
+```{r}
+###Genes that Thomas checked in March for differential splicing
+splicing_candidates <- c("Kmt5b", "Bbs2", "Pitpnm2", "Mical3", "B4galnt4", "Bex4", "Kcnc1", "Pitpnm2", "Tsc22d3", "Mical3")
+nrow(splicing_candidates_SE_EE <- betaResults[betaResults$site %in% SE_EE & betaResults$gene %in% splicing_candidates,]) #0
+
+##Pie chart of hits by context
+SE_EE_hits_anno <- Gene_CpG_Relations_update[Gene_CpG_Relations_update$site %in% SE_EE,]
+summary <- summary(as.factor(SE_EE_hits_anno$anno))
+summary <- as.data.frame(t(as.matrix(summary)))
+colnames(summary) <- "n"
+summary$fraction <- sapply(1:nrow(summary), function(x) summary$n[x]/sum(summary$n))
+
+Set3 <- brewer.pal("Set3", n=11)
+
+ggplot(summary, aes(x="",y=fraction,fill=rownames(summary))) + geom_bar(width=1,stat="identity") + theme_classic() + theme(axis.text.x=element_blank(), axis.title.x=element_blank(), axis.title.y=element_blank(), line=element_blank()) + coord_polar("y", start=0) + scale_fill_manual(values=Set3, name="Genomic Context")
+
+##Sites differentially methylated in EE only - hypomethylated
+#length(EE_down <- EE_sites_down[-which(EE_sites_down %in% SE_sites_down)]) #1,217
+CGI_Gene_permutation_enrichment(EE_sites_down, background.probes, permutation_number, plotmin, plotmax)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 0; Feature: enhancers_active"
+#[1] "Enrichment: 1; Depletion 0.028; Feature: enhancers_poised"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_1to5kb"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_3UTRs"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_exonintronboundaries"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_exons"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intronexonboundaries"
+#[1] "Enrichment: 1; Depletion 0; Feature: mm10_genes_introns"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_promoters"
+#[1] "Enrichment: 0.574; Depletion 1; Feature: mm10_lncrna_gencode"
+#[1] "Enrichment: 1; Depletion 0; Feature: promoters_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_enhancers_fantom"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_5UTRs"
+#[1] "Enrichment: 0; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 0.028; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 0; Feature: mm10_cpg_shores"
+
+#enriched for exons, intergenic, and open sea
+#depleted for poised enhancers, introns, (almost) shores
+
+##Sites differentially methylated in EE only - all
+length(EE_only <- EE_sites[-which(EE_sites %in% SE_sites)]) #1,427
+CGI_Gene_permutation_enrichment(EE_only, background.probes, permutation_number, plotmin, plotmax)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 0.182; Feature: enhancers_active"
+#[1] "Enrichment: 1; Depletion 0.056; Feature: enhancers_poised"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_enhancers_fantom"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_1to5kb"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_3UTRs"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_5UTRs"
+#[1] "Enrichment: 0.476; Depletion 1; Feature: mm10_genes_exonintronboundaries"
+#1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_exons"
+#1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_intergenic"
+#1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intronexonboundaries"
+#1] "Enrichment: 1; Depletion 0; Feature: mm10_genes_introns"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_promoters"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_lncrna_gencode"
+#1] "Enrichment: 1; Depletion 0.826; Feature: promoters_active"
+#[1] "Enrichment: 0.236; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 0.988; Depletion: 1; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 0.8; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 0.224; Feature: mm10_cpg_shores"
+
+#enrichd for exons, intergenic
+#depleted for introns
+
+##Pie chart of hits by context
+nrow(EE_hits_anno <- Gene_CpG_Relations_update[Gene_CpG_Relations_update$site %in% EE_only,])
+summary <- summary(as.factor(EE_hits_anno$anno))
+summary <- as.data.frame(summary)
+colnames(summary) <- "n"
+summary$fraction <- sapply(1:nrow(summary), function(x) summary$n[x]/sum(summary$n))
+
+Set3 <- brewer.pal("Set3", n=11)
+
+ggplot(summary, aes(x="",y=fraction,fill=rownames(summary))) + geom_bar(width=1,stat="identity") + theme_classic() + theme(axis.text.x=element_blank(), axis.title.x=element_blank(), axis.title.y=element_blank(), line=element_blank()) + coord_polar("y", start=0) + scale_fill_manual(values=Set3, name="Genomic Context")
+
+##Sites differentially methylated in EE only - hypermethylated
+#EE_sites_up <- betaResults_WTEE_TGEE[betaResults_WTEE_TGEE$threshold==TRUE & betaResults_WTEE_TGEE$DNAm_change=="Increase","site"]
+#length(EE_up <- EE_sites_up[-which(EE_sites_up %in% SE_sites)]) #213
+CGI_Gene_permutation_enrichment(EE_sites_up, background.probes, permutation_number, plotmin, plotmax)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 1; Feature: enhancers_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: enhancers_poised"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_1to5kb"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_exonintronboundaries"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_exons"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_introns"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_promoters"
+#[1] "Enrichment: 1; Depletion 1; Feature: promoters_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_enhancers_fantom"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_3UTRs"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_5UTRs"
+#[1] "Enrichment: 1; Depletion 0.7; Feature: mm10_genes_intronexonboundaries"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_lncrna_gencode"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 1; Feature: mm10_cpg_shores"
+
+#enriched for exons, intergenic regions
+#depleted for introns
+#almost depleted for enhancers...
+```
+
+#Plotting genomic context enrichment for EE-only sites
+Split by increased vs decreased DNAhm.
+```{r genomic enrichment WT, eval=F}
+#background
+summary <- summary(as.factor(Gene_CpG_Relations_update$anno))
+
+locations_RRBS <- data.frame(RRBS_count=summary)
+
+#calculating the proportion of overall sites in each category (will use this number to normalize hits to the background)
+locations_RRBS$RRBS_fraction <- as.vector(apply(locations_RRBS, 2, function(x) x/sum(locations_RRBS$RRBS_count)))
+
+#getting the number of hits in each genomic context for SE downregulated sites
+locations <- Gene_CpG_Relations_update[Gene_CpG_Relations_update$site %in% EE_sites_down,"anno"]
+loc_summary <- summary(as.factor(locations))
+loc_summary
+#               enhancers_active                enhancers_poised               mm10_genes_1to5kb                mm10_genes_3UTRs mm10_genes_exonintronboundaries 
+#                             17                               3                              14                               8                              47 
+#               mm10_genes_exons           mm10_genes_intergenic mm10_genes_intronexonboundaries              mm10_genes_introns            mm10_genes_promoters 
+#                             23                             147                              15                              76                               3 
+#               promoters_active 
+#                             13 
+
+#add to dataframe
+rownames(locations_RRBS)[-which(rownames(locations_RRBS)%in% names(loc_summary))] #"mm10_genes_5UTRs" "mm10_lncrna_gencode"
+loc_summary <- c(loc_summary, "mm10_genes_5UTRs"=0, "mm10_lncrna_gencode"=0)
+loc_summary <- loc_summary[match(rownames(locations_RRBS),names(loc_summary))]
+all(names(loc_summary)==rownames(locations_RRBS)) #TRUE
+locations_RRBS$real_count <- loc_summary + 0.1
+#replace 0's with 1 to avoid Inf calculations
+#locations_RRBS$real_count[locations_RRBS$real_count==0] <- 1
+locations_RRBS$real_fraction <- sapply(1:length(locations_RRBS$real_count), function(x) locations_RRBS$real_count[x]/sum(locations_RRBS$real_count))
+
+#caluclate fold change
+locations_RRBS$fold_change <- sapply(1:nrow(locations_RRBS), function(x) foldchange(locations_RRBS$real_fraction[x], locations_RRBS$RRBS_fraction[x]))
+
+locations_norm_down <- locations_RRBS
+locations_norm_down$Name <- rownames(locations_RRBS)
+locations_norm_down$Name <- reorder.factor(locations_norm_down$Name, new.order=c("enhancers_poised", "enhancers_active", "promoters_active", "mm10_enhancers_fantom","mm10_genes_1to5kb", "mm10_genes_promoters", "mm10_genes_5UTRs", "mm10_genes_exons", "mm10_genes_exonintronboundaries","mm10_genes_introns","mm10_genes_intronexonboundaries","mm10_genes_3UTRs","mm10_genes_intergenic", "mm10_lncrna_gencode"))
+locations_norm_down$DNAhm_change <- "Decrease"
+```
+
+#Calculating enrichment of hits by CGI context
+
+```{r CGI enrichment WT, eval=F}
+#calculating background numbers/normalization factor
+summary <- summary(as.factor(cpg_anno_cgi$anno))
+#  mm10_cpg_inter mm10_cpg_islands mm10_cpg_shelves  mm10_cpg_shores 
+#           16236              310              994             1768 
+CGI_RRBS <- as.data.frame(summary)
+colnames(CGI_RRBS) <- "RRBS_count"
+CGI_RRBS$RRBS_fraction <- as.vector(apply(CGI_RRBS, 2, function(x) x/sum(CGI_RRBS$RRBS_count)))
+
+#enrichment of hits in SE sites with decreased DNAhm
+CGI_summary <- summary(as.factor(cpg_anno_cgi[cpg_anno_cgi$site %in% EE_sites_down,"anno"]))
+#  mm10_cpg_inter mm10_cpg_islands mm10_cpg_shelves  mm10_cpg_shores 
+#             331                3               13               19 
+
+CGI_RRBS$real_count <- CGI_summary
+CGI_RRBS$real_fraction <- sapply(1:length(CGI_RRBS$real_count), function(x) CGI_RRBS$real_count[x]/sum(CGI_RRBS$real_count))
+
+#caluclate fold change
+CGI_RRBS$fold_change <- sapply(1:nrow(CGI_RRBS), function(x) foldchange(CGI_RRBS$real_fraction[x], CGI_RRBS$RRBS_fraction[x]))
+
+down_CGI_norm <- CGI_RRBS
+down_CGI_norm$Name <- rownames(CGI_RRBS)
+down_CGI_norm$Name <- reorder.factor(down_CGI_norm$Name, new.order=c("mm10_cpg_islands","mm10_cpg_shores","mm10_cpg_shelves","mm10_cpg_inter"))
+down_CGI_norm$DNAhm_change <- "Decrease"
+```
+
+
+#Plotting gene feature enrichment
+
+### Decreased DNAhm gene features (enrichment plot)
+```{r plot genomic enrichment, eval=F}
+min <- min(locations_norm_down$fold_change, down_CGI_norm$fold_change) - 1
+max <- max(locations_norm_down$fold_change, down_CGI_norm$fold_change) + 1
+
+library(ggplot2)
+
+CGI_Gene_permutation_enrichment(EE_sites_down, background.probes, permutation_number, plotmin, plotmax)
+#[1] "FDR Adjusted Permutation P values for enrichment and depletion"
+#[1] "Enrichment: 1; Depletion 0; Feature: enhancers_active"
+#[1] "Enrichment: 1; Depletion 0.392; Feature: enhancers_poised"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_1to5kb"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_3UTRs"
+#[1] "Enrichment: 0.07; Depletion 1; Feature: mm10_genes_exonintronboundaries"
+#[1] "Enrichment: 0.014; Depletion 1; Feature: mm10_genes_exons"
+#[1] "Enrichment: 0; Depletion 1; Feature: mm10_genes_intergenic"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_intronexonboundaries"
+#[1] "Enrichment: 1; Depletion 0.028; Feature: mm10_genes_introns"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_promoters"
+#[1] "Enrichment: 1; Depletion 0; Feature: promoters_active"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_enhancers_fantom"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_genes_5UTRs"
+#[1] "Enrichment: 1; Depletion 1; Feature: mm10_lncrna_gencode"
+#[1] "Enrichment: 0; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 1; Depletion: 0.688; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 0.36; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 0.012; Feature: mm10_cpg_shores"
+
+#add significance from permutation
+#incr: none
+#dcr: enactive ***, exon *, intergenic ***, intron *, promactive ***
+rownames(locations_norm_down)
+locations_norm_down$sig <- as.factor(c("***",NA,NA,NA,NA,NA,"*","***",NA,"*",NA,NA,"***"))
+
+ggplot(locations_norm_down, aes(x=Name, y=fold_change, fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("palegreen2")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("Gene Features") + ylim(c(min,max))  + 
+   geom_text(data = subset(locations_norm_down, fold_change >= 0), 
+      aes(Name, fold_change, group=DNAhm_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=4) +
+    geom_text(data = subset(locations_norm_down, fold_change < 0), 
+      aes(Name, fold_change, group=DNAhm_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=4)
+```
+
+### Decreased DNAhm CGI features (enrichment plot)
+```{r plot cgi enrichment, eval=F}
+#add significance from permutation
+#intergenic, island, shelf, shore
+
+#dcr: intergenic ***, shore *
+#[1] "Enrichment: 0; Depletion: 1; Feature: mm10_cpg_inter"
+#[1] "Enrichment: 1; Depletion: 0.688; Feature: mm10_cpg_islands"
+#[1] "Enrichment: 1; Depletion: 0.36; Feature: mm10_cpg_shelves"
+#[1] "Enrichment: 1; Depletion: 0.012; Feature: mm10_cpg_shores"
+down_CGI_norm$Name
+down_CGI_norm$sig <- c("***",NA,NA,"*")
+
+ggplot(down_CGI_norm, aes(x=Name, y=fold_change, fill=DNAhm_change)) + geom_bar(stat="identity", position="dodge") + theme_bw() + ylab("Fold Change over Background") + scale_fill_manual(values=c("palegreen2")) + geom_hline(yintercept=0) + theme(panel.grid.major.x = element_blank(), axis.text.x = element_text(angle=90, hjust=1, size=12), axis.text.y=element_text(size=12), axis.title.x=element_blank()) + ggtitle("CpG Islands") + ylim(c(min,max))  + 
+   geom_text(data = subset(down_CGI_norm, fold_change >= 0), 
+      aes(Name, fold_change, group=DNAhm_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 0, size=4) +
+    geom_text(data = subset(down_CGI_norm, fold_change < 0), 
+      aes(Name, fold_change, group=DNAhm_change, label=sig),
+        position = position_dodge(width=0.9), vjust = 1.5, size=4)
+```
+
+### Increased DNAhm gene features 
+# box plots
+```{r plot genomic enrichment, eval=F}
+load("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/auto/all_EE_hmC_betas_CpG_10X_auto_var_noout.RData")
+nrow(betas_sub <- betas_variable[rownames(betas_variable) %in% EE_sites_up,]) #4
+
+betas_sub$CpG <- rownames(betas_sub)
+betas_melt <- melt(betas_sub, id.vars="CpG")
+betas_melt$group <- substr(betas_melt$variable, start=1, stop=4)
+betas_melt$group <- reorder.factor(betas_melt$group, new.order=c("WTSE","TGSE","WTEE","TGEE"))
+
+ggplot(betas_melt, aes(x=group,y=value,col=group)) + scale_colour_manual(values=c("black","plum3","gray60","palegreen3")) + theme_classic() + facet_wrap(~CpG) + geom_point() + geom_boxplot() + ylab("Beta value") + theme(axis.title.x=element_blank()) + ylim(c(0,1))
+
+```
+
+
+#Cell type enrichment of hits
+Code from Thomas Hentrich (University of Tuebingen).
+```{r celltype, eval=F}
+#get list of differentially methylated genes
+lm_SE <- read.csv("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/hydroxy/WTSE_TGSE/linear_model/auto/CpG/lm_WTSE_TGSE.csv")
+length(WTSE_TGSE_hits <- unique(lm_SE[lm_SE$threshold==TRUE & lm_SE$adjP<=0.05,"gene"])) #148
+length(WTSE_TGSE_hits <- WTSE_TGSE_hits[complete.cases(WTSE_TGSE_hits)]) #147
+
+WTSE_TGSE_up <- unique(lm_SE[lm_SE$threshold==TRUE & lm_SE$DB>0 & lm_SE$adjP<=0.05,"gene"])
+length(WTSE_TGSE_up <- WTSE_TGSE_up[complete.cases(WTSE_TGSE_up)]) # 3
+WTSE_TGSE_down <- unique(lm_SE[lm_SE$threshold==TRUE & lm_SE$DB<0 & lm_SE$adjP<=0.05,"gene"])
+length(WTSE_TGSE_down <- WTSE_TGSE_down[complete.cases(WTSE_TGSE_down)]) # 144
+
+#mouseMart = useEnsembl( biomart="ENSEMBL_MART_ENSEMBL", dataset = "mmusculus_gene_ensembl", version = 90)
+
+#get mgi symbol to match up with Linnarsson single cell dataset
+#myMap = getBM( attributes = c("ensembl_gene_id","mgi_symbol"),
+#               filters = "ensembl_gene_id",
+#               values = WTSE_TGSE_hits,
+#               mart = mouseMart,
+#               uniqueRows = T)
+  
+linnarsson = read.table(file = "~/KoborLab/kobor_space/sschaffner/DecipherPD_RRBS/analysis_scripts_final/editedData.txt" , sep = '\t' , header = F)
+
+# caclulate common genes
+#idx = na.omit(match(myMap$mgi_symbol , linnarsson$V1))
+length(background_genes <- unique(lm_SE$gene[complete.cases(lm_SE$gene)])) #2,104
+
+# reduce Linnarsson set to common genes
+nrow(linnarsson <- linnarsson[linnarsson$V1 %in% background_genes,]) #1,879
+
+#globalOverlap = intersect( myMap$mgi_symbol , linnarsson$V1 )
+
+#list of genes in your dataset which make up each celltype class
+#"IntN" (1), "PyrN" (3),"Oligo" (4), "Micro" (5), "Astro" (7)
+classes = list(class1 = linnarsson$V1[linnarsson$V2 == 1],
+               class2 = linnarsson$V1[linnarsson$V2 == 2],
+               class3 = linnarsson$V1[linnarsson$V2 == 3],
+               class4 = linnarsson$V1[linnarsson$V2 == 4],
+               class5 = linnarsson$V1[linnarsson$V2 == 5],
+               class6 = linnarsson$V1[linnarsson$V2 == 6],
+               class7 = linnarsson$V1[linnarsson$V2 == 7],
+               class8 = linnarsson$V1[linnarsson$V2 == 8],
+               class9 = linnarsson$V1[linnarsson$V2 == 9])
+
+#list of hits in each class
+intersectsAll = list(intersect1 = intersect(classes$class1 , WTSE_TGSE_hits),
+                   intersect2 = intersect(classes$class2 , WTSE_TGSE_hits),
+                   intersect3 = intersect(classes$class3 , WTSE_TGSE_hits),
+                   intersect4 = intersect(classes$class4 , WTSE_TGSE_hits),
+                   intersect5 = intersect(classes$class5 , WTSE_TGSE_hits),
+                   intersect6 = intersect(classes$class6 , WTSE_TGSE_hits),
+                   intersect7 = intersect(classes$class7 , WTSE_TGSE_hits),
+                   intersect8 = intersect(classes$class8 , WTSE_TGSE_hits),
+                   intersect9 = intersect(classes$class9 , WTSE_TGSE_hits)
+                 )
+
+#all microglial genes
+length(micro_genes_all <- intersectsAll$intersect5) #2 DHM genes are microglial
+length(classes$class5) #29 total genes in the category
+#2/29 = 7% of the genes in class
+
+intersectsDown = list(intersect1 = intersect(classes$class1 , WTSE_TGSE_down),
+                   intersect2 = intersect(classes$class2 , WTSE_TGSE_down),
+                   intersect3 = intersect(classes$class3 , WTSE_TGSE_down),
+                   intersect4 = intersect(classes$class4 , WTSE_TGSE_down),
+                   intersect5 = intersect(classes$class5 , WTSE_TGSE_down),
+                   intersect6 = intersect(classes$class6 , WTSE_TGSE_down),
+                   intersect7 = intersect(classes$class7 , WTSE_TGSE_down),
+                   intersect8 = intersect(classes$class8 , WTSE_TGSE_down),
+                   intersect9 = intersect(classes$class9 , WTSE_TGSE_down)
+                 )
+
+#hypo-hydroxymethylated microglial genes
+length(micro_genes_down <- intersectsDown$intersect5) #2 DHM genes are microglial
+length(classes$class5) #29 total genes in the category
+#2/29 = 10% of the genes in class
+
+
+intersectsUp = list(intersect1 = intersect(classes$class1 , WTSE_TGSE_up),
+                   intersect2 = intersect(classes$class2 , WTSE_TGSE_up),
+                   intersect3 = intersect(classes$class3 , WTSE_TGSE_up),
+                   intersect4 = intersect(classes$class4 , WTSE_TGSE_up),
+                   intersect5 = intersect(classes$class5 , WTSE_TGSE_up),
+                   intersect6 = intersect(classes$class6 , WTSE_TGSE_up),
+                   intersect7 = intersect(classes$class7 , WTSE_TGSE_up),
+                   intersect8 = intersect(classes$class8 , WTSE_TGSE_up),
+                   intersect9 = intersect(classes$class9 , WTSE_TGSE_up)
+                 )
+
+foldChanges = list(foldChanges1 = c(lengths(intersectsAll[1]) / (lengths(classes[1])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[1]) / (lengths(classes[1])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[1]) / (lengths(classes[1])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges2 = c(lengths(intersectsAll[2]) / (lengths(classes[2])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[2]) / (lengths(classes[2])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[2]) / (lengths(classes[2])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges3 = c(lengths(intersectsAll[3]) / (lengths(classes[3])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[3]) / (lengths(classes[3])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[3]) / (lengths(classes[3])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges4 = c(lengths(intersectsAll[4]) / (lengths(classes[4])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[4]) / (lengths(classes[4])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[4]) / (lengths(classes[4])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges5 = c(lengths(intersectsAll[5]) / (lengths(classes[5])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[5]) / (lengths(classes[5])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[5]) / (lengths(classes[5])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges6 = c(lengths(intersectsAll[6]) / (lengths(classes[6])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[6]) / (lengths(classes[6])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[6]) / (lengths(classes[6])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges7 = c(lengths(intersectsAll[7]) / (lengths(classes[7])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[7]) / (lengths(classes[7])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[7]) / (lengths(classes[7])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges8 = c(lengths(intersectsAll[8]) / (lengths(classes[8])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[8]) / (lengths(classes[8])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[8]) / (lengths(classes[8])/dim(linnarsson)[1] * length(WTSE_TGSE_up))),
+                   foldChanges9 = c(lengths(intersectsAll[9]) / (lengths(classes[9])/dim(linnarsson)[1] * length(WTSE_TGSE_hits)),
+                                    lengths(intersectsDown[9]) / (lengths(classes[9])/dim(linnarsson)[1] * length(WTSE_TGSE_down)),
+                                    lengths(intersectsUp[9]) / (lengths(classes[9])/dim(linnarsson)[1] * length(WTSE_TGSE_up)))
+                  )
+
+
+# calculate p.values of the enrichments/depletions
+pVals = data.frame()
+
+# first row of p.values - all DMGs
+cache = list()
+for (i in 1:9){
+  fisherMatrix = matrix( c(lengths(intersectsAll[i]) , #DMGs in each cell type class
+                           lengths(classes[i]) - lengths(intersectsAll[i]), #notDMGs in each class
+                           length(WTSE_TGSE_hits) - lengths(intersectsAll[i]), #DMGs not in class
+                           dim(linnarsson)[1] - length(WTSE_TGSE_hits) - (lengths(classes[i]) - lengths(intersectsAll[i])) #notDMGs not in class
+                         ),
+                         nrow = 2,
+                         dimnames = list(DM = c("DMG", "notDMG"),
+                                         type = c("CellType", "notCellType")
+                                        )
+                         ) #matrix indicates that 10/128 DMGs contribute to cell types
+  fisherRes = fisher.test(fisherMatrix , alternative = "two.sided")
+
+  cache = c(cache , fisherRes$p.value)
+}
+pVals = rbind(pVals , unlist(cache))
+
+# second row of p.values - down
+cache = list()
+for (i in 1:9){
+  fisherMatrix = matrix( c(lengths(intersectsDown[i]) , #DMGs in each cell type class
+                           lengths(classes[i]) - lengths(intersectsDown[i]), #notDMGs in each class
+                           length(WTSE_TGSE_down) - lengths(intersectsDown[i]), #DMGs not in class
+                           dim(linnarsson)[1] - length(WTSE_TGSE_down) - (lengths(classes[i]) - lengths(intersectsDown[i])) #notDMGs not in class
+                         ),
+                         nrow = 2,
+                         dimnames = list(DM = c("DMG", "notDMG"),
+                                         type = c("CellType", "notCellType")
+                                        )
+                         ) #matrix indicates that 10/128 DMGs contribute to cell types
+  fisherRes = fisher.test(fisherMatrix , alternative = "two.sided")
+
+  cache = c(cache , fisherRes$p.value)
+}
+pVals = rbind(pVals , unlist(cache))
+
+# third row of p.values - up
+cache = list()
+for (i in 1:9){
+  fisherMatrix = matrix( c(lengths(intersectsUp[i]) , #DMGs in each cell type class
+                           lengths(classes[i]) - lengths(intersectsUp[i]), #notDMGs in each class
+                           length(WTSE_TGSE_up) - lengths(intersectsUp[i]), #DMGs not in class
+                           dim(linnarsson)[1] - length(WTSE_TGSE_up) - (lengths(classes[i]) - lengths(intersectsUp[i])) #notDMGs not in class
+                         ),
+                         nrow = 2,
+                         dimnames = list(DM = c("DMG", "notDMG"),
+                                         type = c("CellType", "notCellType")
+                                        )
+                         ) #matrix indicates that 10/128 DMGs contribute to cell types
+  fisherRes = fisher.test(fisherMatrix , alternative = "two.sided")
+
+  cache = c(cache , fisherRes$p.value)
+}
+pVals = rbind(pVals , unlist(cache))
+
+
+# remove unwanted columns in p.values
+#leave these columns: "IntN" (1), "PyrN" (3),"Oligo" (4), "Micro" (5), "Astro" (7)
+pVals = pVals[ , c(1,3,4,5,7)]
+log10pVals = -log10(pVals)
+
+# remove unwanted cell types
+#leave these columns: "IntN" (1), "PyrN" (3),"Oligo" (4), "Micro" (5), "Astro" (7)
+foldChanges = foldChanges[ c(1,3,4,5,7) ]
+
+logFoldChanges = as.data.frame(lapply( foldChanges , log2 ))
+foldChanges = as.data.frame(foldChanges)
+
+# change sign of pVals when foldChange < 1
+# all foldChanges > 1, skip this part
+for (i in 1:dim(log10pVals)[1]){
+  for (j in 1:dim(log10pVals)[2]){
+    if (foldChanges[i,j] < 1){
+      log10pVals[i,j] = log10pVals[i,j] * -1
+    }
+  }
+}
+
+labs = list()
+for (i in 1:dim(foldChanges)[1]){
+  cache = list()
+  for (j in 1:dim(foldChanges)[2]){
+    currFC = round(foldChanges[i,j] , digits = 2)
+    if (pVals[i,j] > 0.01){
+      currPV = round(pVals[i,j] , digits = 2)
+    }else{
+      currPV = format(pVals[i,j] , scientific = T , digits = 2)
+    }
+    cache = c(cache , paste(currFC ,
+                            paste("(", currPV,")",sep="") ,
+                            sep="\n")
+              )
+  }
+  labs = rbind(labs , cache)
+}
+
+hmcols = colorRampPalette(c("deepskyblue3","white", "tomato3"))
+summary(foldChanges)
+#colbreaks = c(seq(0 , 2.99 , length = 3),
+#              seq(3, 5.99, length = 3),
+#              seq(6 , 9 , length = 3))
+
+heatmap.2(as.matrix(log10pVals),
+          col = hmcols,
+          #breaks = colbreaks,
+          labRow = c("all" , "down" , "up"),
+          labCol = c("IntN" , "PyrN" ,"Oligo" , "Micro" , "Astro"),
+          
+          key = T,
+          keysize = 1,
+          trace = "none",
+          density.info = "none",
+          
+          Colv = NA,
+          Rowv = NA,
+          
+          cellnote = labs,
+          notecol = "black",
+          notecex = 1.5,
+          srtCol = 45,
+          cexRow = 1.5,
+          cexCol = 1.5
+         )
+```
+
+#Cell type enrichment of hits: EE
+Code from Thomas Hentrich (University of Tuebingen).
+```{r celltype EE, eval=F}
+#get list of differentially methylated genes
+lm_EE <- read.csv("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/hydroxy/WTEE_TGEE/linear_model/auto/CpG/lm_WTEE_TGEE.csv")
+length(WTEE_TGEE_hits <- unique(lm_EE[lm_EE$threshold==TRUE & lm_EE$adjP<=0.05,"gene"])) #88
+length(WTEE_TGEE_hits <- WTEE_TGEE_hits[complete.cases(WTEE_TGEE_hits)]) #87
+
+WTEE_TGEE_up <- unique(lm_EE[lm_EE$threshold==TRUE & lm_EE$DB>0 & lm_EE$adjP<=0.05,"gene"])
+length(WTEE_TGEE_up <- WTEE_TGEE_up[complete.cases(WTEE_TGEE_up)]) # 1
+WTEE_TGEE_down <- unique(lm_EE[lm_EE$threshold==TRUE & lm_EE$DB<0 & lm_EE$adjP<=0.05,"gene"])
+length(WTEE_TGEE_down <- WTEE_TGEE_down[complete.cases(WTEE_TGEE_down)]) # 86
+
+#list of hits in each class
+intersectsAll = list(intersect1 = intersect(classes$class1 , WTEE_TGEE_hits),
+                   intersect2 = intersect(classes$class2 , WTEE_TGEE_hits),
+                   intersect3 = intersect(classes$class3 , WTEE_TGEE_hits),
+                   intersect4 = intersect(classes$class4 , WTEE_TGEE_hits),
+                   intersect5 = intersect(classes$class5 , WTEE_TGEE_hits),
+                   intersect6 = intersect(classes$class6 , WTEE_TGEE_hits),
+                   intersect7 = intersect(classes$class7 , WTEE_TGEE_hits),
+                   intersect8 = intersect(classes$class8 , WTEE_TGEE_hits),
+                   intersect9 = intersect(classes$class9 , WTEE_TGEE_hits)
+                 )
+
+intersectsDown = list(intersect1 = intersect(classes$class1 , WTEE_TGEE_down),
+                   intersect2 = intersect(classes$class2 , WTEE_TGEE_down),
+                   intersect3 = intersect(classes$class3 , WTEE_TGEE_down),
+                   intersect4 = intersect(classes$class4 , WTEE_TGEE_down),
+                   intersect5 = intersect(classes$class5 , WTEE_TGEE_down),
+                   intersect6 = intersect(classes$class6 , WTEE_TGEE_down),
+                   intersect7 = intersect(classes$class7 , WTEE_TGEE_down),
+                   intersect8 = intersect(classes$class8 , WTEE_TGEE_down),
+                   intersect9 = intersect(classes$class9 , WTEE_TGEE_down)
+                 )
+
+
+intersectsUp = list(intersect1 = intersect(classes$class1 , WTEE_TGEE_up),
+                   intersect2 = intersect(classes$class2 , WTEE_TGEE_up),
+                   intersect3 = intersect(classes$class3 , WTEE_TGEE_up),
+                   intersect4 = intersect(classes$class4 , WTEE_TGEE_up),
+                   intersect5 = intersect(classes$class5 , WTEE_TGEE_up),
+                   intersect6 = intersect(classes$class6 , WTEE_TGEE_up),
+                   intersect7 = intersect(classes$class7 , WTEE_TGEE_up),
+                   intersect8 = intersect(classes$class8 , WTEE_TGEE_up),
+                   intersect9 = intersect(classes$class9 , WTEE_TGEE_up)
+                 )
+
+foldChanges = list(foldChanges1 = c(lengths(intersectsAll[1]) / (lengths(classes[1])/dim(linnarsson)[1] * length(WTEE_TGEE_hits)),
+                                    lengths(intersectsDown[1]) / (lengths(classes[1])/dim(linnarsson)[1] * length(WTEE_TGEE_down)),
+                                    lengths(intersectsUp[1]) / (lengths(classes[1])/dim(linnarsson)[1] * length(WTEE_TGEE_up))),
+                   foldChanges2 = c(lengths(intersectsAll[2]) / (lengths(classes[2])/dim(linnarsson)[1] * length(WTEE_TGEE_hits)),
+                                    lengths(intersectsDown[2]) / (lengths(classes[2])/dim(linnarsson)[1] * length(WTEE_TGEE_down)),
+                                    lengths(intersectsUp[2]) / (lengths(classes[2])/dim(linnarsson)[1] * length(WTEE_TGEE_up))),
+                   foldChanges3 = c(lengths(intersectsAll[3]) / (lengths(classes[3])/dim(linnarsson)[1] * length(WTEE_TGEE_hits)),
+                                    lengths(intersectsDown[3]) / (lengths(classes[3])/dim(linnarsson)[1] * length(WTEE_TGEE_down)),
+                                    lengths(intersectsUp[3]) / (lengths(classes[3])/dim(linnarsson)[1] * length(WTEE_TGEE_up))),
+                   foldChanges4 = c(lengths(intersectsAll[4]) / (lengths(classes[4])/dim(linnarsson)[1] * length(WTEE_TGEE_hits)),
+                                    lengths(intersectsDown[4]) / (lengths(classes[4])/dim(linnarsson)[1] * length(WTEE_TGEE_down)),
+                                    lengths(intersectsUp[4]) / (lengths(classes[4])/dim(linnarsson)[1] * length(WTEE_TGEE_up))),
+                   foldChanges5 = c(lengths(intersectsAll[5]) / (lengths(classes[5])/dim(linnarsson)[1] * length(WTEE_TGEE_hits)),
+                                    lengths(intersectsDown[5]) / (lengths(classes[5])/dim(linnarsson)[1] * length(WTEE_TGEE_down)),
+                                    lengths(intersectsUp[5]) / (lengths(classes[5])/dim(linnarsson)[1] * length(WTEE_TGEE_up))),
+                   foldChanges6 = c(lengths(intersectsAll[6]) / (lengths(classes[6])/dim(linnarsson)[1] * length(WTEE_TGEE_hits)),
+                                    lengths(intersectsDown[6]) / (lengths(classes[6])/dim(linnarsson)[1] * length(WTEE_TGEE_down)),
+                                    lengths(intersectsUp[6]) / (lengths(classes[6])/dim(linnarsson)[1] * length(WTEE_TGEE_up))),
+                   foldChanges7 = c(lengths(intersectsAll[7]) / (lengths(classes[7])/dim(linnarsson)[1] * length(WTEE_TGEE_hits)),
+                                    lengths(intersectsDown[7]) / (lengths(classes[7])/dim(linnarsson)[1] * length(WTEE_TGEE_down)),
+                                    lengths(intersectsUp[7]) / (lengths(classes[7])/dim(linnarsson)[1] * length(WTEE_TGEE_up))),
+                   foldChanges8 = c(lengths(intersectsAll[8]) / (lengths(classes[8])/dim(linnarsson)[1] * length(WTEE_TGEE_hits)),
+                                    lengths(intersectsDown[8]) / (lengths(classes[8])/dim(linnarsson)[1] * length(WTEE_TGEE_down)),
+                                    lengths(intersectsUp[8]) / (lengths(classes[8])/dim(linnarsson)[1] * length(WTEE_TGEE_up))),
+                   foldChanges9 = c(lengths(intersectsAll[9]) / (lengths(classes[9])/dim(linnarsson)[1] * length(WTEE_TGEE_hits)),
+                                    lengths(intersectsDown[9]) / (lengths(classes[9])/dim(linnarsson)[1] * length(WTEE_TGEE_down)),
+                                    lengths(intersectsUp[9]) / (lengths(classes[9])/dim(linnarsson)[1] * length(WTEE_TGEE_up)))
+                  )
+
+
+# calculate p.values of the enrichments/depletions
+pVals = data.frame()
+
+# first row of p.values - all DMGs
+cache = list()
+for (i in 1:9){
+  fisherMatrix = matrix( c(lengths(intersectsAll[i]) , #DMGs in each cell type class
+                           lengths(classes[i]) - lengths(intersectsAll[i]), #notDMGs in each class
+                           length(WTEE_TGEE_hits) - lengths(intersectsAll[i]), #DMGs not in class
+                           dim(linnarsson)[1] - length(WTEE_TGEE_hits) - (lengths(classes[i]) - lengths(intersectsAll[i])) #notDMGs not in class
+                         ),
+                         nrow = 2,
+                         dimnames = list(DM = c("DMG", "notDMG"),
+                                         type = c("CellType", "notCellType")
+                                        )
+                         ) #matrix indicates that 10/128 DMGs contribute to cell types
+  fisherRes = fisher.test(fisherMatrix , alternative = "two.sided")
+
+  cache = c(cache , fisherRes$p.value)
+}
+pVals = rbind(pVals , unlist(cache))
+
+# second row of p.values - down
+cache = list()
+for (i in 1:9){
+  fisherMatrix = matrix( c(lengths(intersectsDown[i]) , #DMGs in each cell type class
+                           lengths(classes[i]) - lengths(intersectsDown[i]), #notDMGs in each class
+                           length(WTEE_TGEE_down) - lengths(intersectsDown[i]), #DMGs not in class
+                           dim(linnarsson)[1] - length(WTEE_TGEE_down) - (lengths(classes[i]) - lengths(intersectsDown[i])) #notDMGs not in class
+                         ),
+                         nrow = 2,
+                         dimnames = list(DM = c("DMG", "notDMG"),
+                                         type = c("CellType", "notCellType")
+                                        )
+                         ) #matrix indicates that 10/128 DMGs contribute to cell types
+  fisherRes = fisher.test(fisherMatrix , alternative = "two.sided")
+
+  cache = c(cache , fisherRes$p.value)
+}
+pVals = rbind(pVals , unlist(cache))
+
+# third row of p.values - up
+cache = list()
+for (i in 1:9){
+  fisherMatrix = matrix( c(lengths(intersectsUp[i]) , #DMGs in each cell type class
+                           lengths(classes[i]) - lengths(intersectsUp[i]), #notDMGs in each class
+                           length(WTEE_TGEE_up) - lengths(intersectsUp[i]), #DMGs not in class
+                           dim(linnarsson)[1] - length(WTEE_TGEE_up) - (lengths(classes[i]) - lengths(intersectsUp[i])) #notDMGs not in class
+                         ),
+                         nrow = 2,
+                         dimnames = list(DM = c("DMG", "notDMG"),
+                                         type = c("CellType", "notCellType")
+                                        )
+                         ) #matrix indicates that 10/128 DMGs contribute to cell types
+  fisherRes = fisher.test(fisherMatrix , alternative = "two.sided")
+
+  cache = c(cache , fisherRes$p.value)
+}
+pVals = rbind(pVals , unlist(cache))
+
+
+# remove unwanted columns in p.values
+#leave these columns: "IntN" (1), "PyrN" (3),"Oligo" (4), "Micro" (5), "Astro" (7)
+pVals = pVals[ , c(1,3,4,5,7)]
+log10pVals = -log10(pVals)
+
+# remove unwanted cell types
+#leave these columns: "IntN" (1), "PyrN" (3),"Oligo" (4), "Micro" (5), "Astro" (7)
+foldChanges = foldChanges[ c(1,3,4,5,7) ]
+
+logFoldChanges = as.data.frame(lapply( foldChanges , log2 ))
+foldChanges = as.data.frame(foldChanges)
+
+# change sign of pVals when foldChange < 1
+# all foldChanges > 1, skip this part
+for (i in 1:dim(log10pVals)[1]){
+  for (j in 1:dim(log10pVals)[2]){
+    if (foldChanges[i,j] < 1){
+      log10pVals[i,j] = log10pVals[i,j] * -1
+    }
+  }
+}
+
+labs = list()
+for (i in 1:dim(foldChanges)[1]){
+  cache = list()
+  for (j in 1:dim(foldChanges)[2]){
+    currFC = round(foldChanges[i,j] , digits = 2)
+    if (pVals[i,j] > 0.01){
+      currPV = round(pVals[i,j] , digits = 2)
+    }else{
+      currPV = format(pVals[i,j] , scientific = T , digits = 2)
+    }
+    cache = c(cache , paste(currFC ,
+                            paste("(", currPV,")",sep="") ,
+                            sep="\n")
+              )
+  }
+  labs = rbind(labs , cache)
+}
+
+hmcols = colorRampPalette(c("deepskyblue3","white", "tomato3"))
+summary(foldChanges)
+#colbreaks = c(seq(0 , 2.99 , length = 3),
+#              seq(3, 5.99, length = 3),
+#              seq(6 , 9 , length = 3))
+
+heatmap.2(as.matrix(log10pVals),
+          col = hmcols,
+          #breaks = colbreaks,
+          labRow = c("all" , "down" , "up"),
+          labCol = c("IntN" , "PyrN" ,"Oligo" , "Micro" , "Astro"),
+          
+          key = T,
+          keysize = 1,
+          trace = "none",
+          density.info = "none",
+          
+          Colv = NA,
+          Rowv = NA,
+          
+          cellnote = labs,
+          notecol = "black",
+          notecex = 1.5,
+          srtCol = 45,
+          cexRow = 1.5,
+          cexCol = 1.5
+         )
+```

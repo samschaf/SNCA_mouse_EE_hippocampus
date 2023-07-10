@@ -1,0 +1,128 @@
+DecipherPD Mouse Enriched Environment Hippocampus Differential Methylation
+================================
+
+##### Analyst: Samantha Schaffner
+##### Date: Jan 16, 2023
+
+In this script I will compare DNAm and DNAhm levels at CpGs with differential hydroxymethylation. Typically these should be inversely correlated; however, loss of hmC is possible without gain of mC, if exisiting hmC is oxidized to C. I'll be looking more for a loss of mC associated with gain of hmC.
+
+## Load in data and set working directories
+
+```{r load data, eval=F}
+.libPaths(c(.libPaths(),"/mnt/scratch/KoborLab/R_Libs/4.2"))
+library(BiSeq)
+library(GenomicRanges)
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+library(gplots)
+library(RColorBrewer)
+library(gtools)
+library(DescTools)
+library(normtest)
+library(ggpubr)
+library(gridExtra)
+library(bacon)
+library(NCmisc)
+library(limma)
+library(car)
+library(gtools)
+library(RColorBrewer)
+library(pvclust)
+source("/mnt/scratch/KoborLab/shared_coding_resource/qqplot_NG.R")
+```
+
+## Reading in differentially hydroxymethylated CpGs list
+
+```{r volcano 1, eval=F}
+results_G <- read.csv("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/hydroxy/WTSE_TGSE/linear_model/auto/CpG/lm_WTSE_TGSE.csv")
+
+#CpGs with increased hmC in TG mice
+hmC_up <- results_G[results_G$DB>0 & results_G$threshold==TRUE & results_G$adjP<=0.05,"site"] #10 CpGs
+
+#CpGs with decreased hmC in TG mice
+hmC_down <- results_G[results_G$DB<0 & results_G$threshold==TRUE & results_G$adjP<=0.05,"site"] #697 CpGs
+
+load("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/auto/10X_filter/all_EE_mC_betas_CpG_10X.RData")
+dim(all_EE)
+#[1] 914215     16
+colnames(all_EE)
+all_EE <- all_EE[,-c(8,12,13)] #removing outliers
+
+####### CpGs with increased hmC in TG mice (expecting decreased mC in TG mice)
+#DNAm
+nrow(betas_mC <- all_EE[rownames(all_EE) %in% hmC_up,]) #10
+
+#DNAhm
+load("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/auto/all_EE_hmC_betas_CpG_10X_auto_var_noout.RData")
+nrow(betas_hmC <- betas_variable[rownames(betas_variable) %in% hmC_up,]) #10
+all(rownames(betas_mC)==rownames(betas_hmC)) #TRUE
+
+colnames(betas_mC) <- paste(colnames(betas_mC), "mC", sep=".")
+colnames(betas_hmC) <- paste(colnames(betas_hmC), "hmC", sep=".")
+betas_combined <- cbind(betas_mC, betas_hmC)
+
+betas_combined <- as.matrix(betas_combined)
+Spect <- brewer.pal("Spectral", n=11)
+Greys <- brewer.pal("Greys", n=9)
+
+#clustering and significance testing
+clust <- pvclust(betas_sub)
+plot(clust)
+
+heatmap.2(betas_combined, trace="none", col=Greys, Colv=NA, symbreaks=F, symkey=F)
+
+
+####### CpGs with decreased hmC in TG mice 
+#DNAm
+nrow(betas_mC <- all_EE[rownames(all_EE) %in% hmC_down,]) #697
+
+#DNAhm
+nrow(betas_hmC <- betas_variable[rownames(betas_variable) %in% hmC_down,]) #697
+all(rownames(betas_mC)==rownames(betas_hmC)) #TRUE
+
+colnames(betas_mC) <- paste(colnames(betas_mC), "mC", sep=".")
+colnames(betas_hmC) <- paste(colnames(betas_hmC), "hmC", sep=".")
+betas_combined <- cbind(betas_mC, betas_hmC)
+
+betas_combined <- as.matrix(betas_combined)
+
+heatmap.2(betas_combined, trace="none", col=Greys, Colv=NA, symbreaks=F, symkey=F)
+
+####### Check significance of DHM CpGs in differential methylation analysis
+# nominal level since not much differential methylation was seen
+results_mC <- read.csv("/mnt/scratch/KoborLab/DecipherPD_mouse/ee_asyn/hipp/sschaffner/082022/5-methdiff_DNAm_DNAhm/methylation/WTSE_TGSE/linear_model/auto/CpG/lm_WTSE_TGSE.csv")
+nrow(mC_change <- results_mC[results_mC$Pr...t..<=0.01 & abs(results_mC$DB)>=0.1,]) #2674
+length(mC_hmC <- mC_change$site[mC_change$site %in% hmC_down|mC_change$site %in% hmC_up]) #80
+summary(results_mC[results_mC$site %in% mC_hmC,c("Pr...t..","adjP")])
+#    Pr...t..              adjP       
+# Min.   :1.171e-05   Min.   :0.3129  
+# 1st Qu.:1.834e-03   1st Qu.:0.8724  
+# Median :3.976e-03   Median :0.9275  
+# Mean   :4.426e-03   Mean   :0.9004  
+# 3rd Qu.:7.058e-03   3rd Qu.:0.9730  
+# Max.   :9.954e-03   Max.   :1.0000 
+
+#though nominally significant, these mC changes really don't come close to passing MTC, with adjusted p-values close to 0.9 on average
+
+summary(abs(results_mC[results_mC$site %in% mC_hmC,"DB"]))
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.1141  0.1768  0.2290  0.2241  0.2543  0.3862 
+
+summary(abs(results_G[results_G$site %in% mC_hmC,"DB"]))
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.1280  0.2170  0.2697  0.2675  0.3059  0.4878 
+
+nrow(betas_mC <- all_EE[rownames(all_EE) %in% mC_hmC,]) #80
+nrow(betas_hmC <- betas_variable[rownames(betas_variable) %in% mC_hmC,]) #80
+all(rownames(betas_mC)==rownames(betas_hmC)) #TRUE
+
+colnames(betas_mC) <- paste(colnames(betas_mC), "mC", sep=".")
+colnames(betas_hmC) <- paste(colnames(betas_hmC), "hmC", sep=".")
+betas_combined <- cbind(betas_mC, betas_hmC)
+
+betas_combined <- as.matrix(betas_combined)
+
+heatmap.2(betas_combined, trace="none", col=Spect, Colv=NA, symbreaks=F, symkey=F)
+```
+
