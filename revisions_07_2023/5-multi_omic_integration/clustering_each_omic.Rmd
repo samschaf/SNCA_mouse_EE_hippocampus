@@ -1,0 +1,422 @@
+# Exploratory visualization in EE mouse hippocampus: Hierarchical clustering
+
+## Samantha Schaffner
+## June 17, 2023
+
+In this script, I will perform hierarchical clustering on all CpGs, CpHs, genes, or peaks within each dataset, testing the significance of the clustering with the "pvclust" package and labelling groups for easier visualization.
+
+## Libraries
+
+```{r libraries, eval=F}
+library(BiSeq)
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+library(DescTools)
+library(gplots)
+library(RColorBrewer)
+library(pvclust)
+library(scales)
+```
+
+
+## Reading in and formatting individual 'omics data
+
+```{r ind omics, eval=F}
+load("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/4-processed_RNAseq_data/nCounts_EE_HIP.RData") #use nCounts_mnc50 object. rownames are ensembl genes, colnames sample IDs
+#nCounts: all genes with >= 1 read
+#nCounts_mnc50: all genes with >= 50 reads (used for DE analysis)
+nrow(nCounts_mnc50) #12286
+length(rownames(nCounts_mnc50)[grep("ENSMUSG", rownames(nCounts_mnc50))]) #12286
+#no human SNCA transgene (all are aligned to mouse genes)
+length(rownames(nCounts_mnc50)[grep("ENSMUSG00000056870", rownames(nCounts_mnc50))]) #0 - no Gulp1 either
+
+mRNA <- t(nCounts_mnc50)
+sampleInfo$environment <- gsub("STD", "SE", sampleInfo$environment)
+sampleInfo$ID <- paste(sampleInfo$genotype, sampleInfo$environment, sep="")
+sampleInfo$ID <- paste(sampleInfo$ID, rep(seq(1:4),4), sep="")
+all.equal(sampleInfo$run, rownames(mRNA)) #TRUE
+rownames(mRNA) <- sampleInfo$ID
+rownames(mRNA)
+#order: WTSE, TGSE, WTEE, TGEE
+mRNA <- mRNA[c(5:8,13:16,1:4,9:12),]
+rownames(mRNA)
+
+#DNAm/DNAhm
+load("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/auto/10X_filter/oxBS_BSraw_CpG_10X_noout_auto_var.RData")
+DNAm <- t(as.matrix(methLevel(rawToRel(BSraw_auto_var))))
+rownames(DNAm) #"WTSE1" "WTSE2" "WTSE3" "WTSE4" "WTEE1" "WTEE2" "WTEE3" "TGSE1" "TGSE2" "TGSE3" "TGEE2" "TGEE3" "TGEE4"
+#order: WTSE, TGSE, WTEE, TGEE
+DNAm <- DNAm[c(1:4,8:10,5:7,11:13),]
+rownames(DNAm)
+
+load("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/preprocessing/hydroxy/CpG/auto/all_EE_hmC_betas_CpG_10X_auto_var_noout.RData")
+DNAhm <- t(as.matrix(betas_variable))
+rownames(DNAhm) #"WTSE1" "WTSE2" "WTSE3" "WTSE4" "WTEE1" "WTEE2" "WTEE3" "TGSE1" "TGSE2" "TGSE3" "TGEE2" "TGEE3" "TGEE4"
+#order: WTSE, TGSE, WTEE, TGEE
+DNAhm <- DNAhm[c(1:4,8:10,5:7,11:13),]
+rownames(DNAhm)
+
+#ChIPseq: concentrations
+H3K4me1 <- read.csv("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/5-ChIPseq/diffbind_2_reps_all_conspeaks/conc_H3K4me1_2.csv")
+H3K4me1.mat <- t(as.matrix(H3K4me1[,3:18]))
+colnames(H3K4me1.mat) <- H3K4me1$coord
+rownames(H3K4me1.mat)
+
+H3K27ac <- read.csv("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/5-ChIPseq/diffbind_2_reps_all_conspeaks/conc_H3K27ac_2.csv")
+H3K27ac.mat <- t(as.matrix(H3K27ac[,3:18]))
+colnames(H3K27ac.mat) <- H3K27ac$coord
+rownames(H3K27ac.mat)
+
+H3K4me3 <- read.csv("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/5-ChIPseq/diffbind_2_reps_all_conspeaks/conc_H3K4me3_2.csv")
+H3K4me3.mat <- t(as.matrix(H3K4me3[,3:18]))
+colnames(H3K4me3.mat) <- H3K4me3$coord
+rownames(H3K4me3.mat)
+
+all(rownames(H3K4me1.mat)==rownames(H3K4me3.mat)) #TRUE
+all(rownames(H3K4me1.mat)==rownames(H3K27ac.mat)) #TRUE
+rownames(H3K4me1.mat) #checking order: WTSE, TGSE, WTEE, TGEE (4 per group)
+
+ncol(mRNA) #12,286 genes
+ncol(DNAm) #329,507 cytosines
+ncol(DNAhm) #19,308 cytosines
+ncol(H3K4me1.mat) #120,387 peaks
+ncol(H3K4me3.mat) #36,517 peaks
+ncol(H3K27ac.mat) #97,234 peaks
+```
+
+## Clustering
+
+### mRNA
+```{r mRNA PLS, eval=F}
+mRNA <- t(mRNA)
+
+#clustering and significance testing
+clust <- pvclust(mRNA)
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/pvclust_mRNA.png", width=578, height=500)
+plot(clust)
+dev.off()
+
+#colour by group
+colnames(mRNA)
+clab=c(rep("black",4),rep("plum3",4),rep("grey60",4),rep("palegreen3",4))
+names(clab) <- c(rep("WTSE",4),rep("TGSE",4),rep("WTEE",4),rep("TGEE",4))
+
+#transform counts to Z-scores
+mRNA_scaled <- as.data.frame(t(apply(mRNA, 1, function(x) scale(x))))
+colnames(mRNA_scaled) <- colnames(mRNA)
+limit <- max(abs(mRNA_scaled))*c(-1,1)
+RdBu_pal2 <- brewer_pal(palette=5, type="div", direction=-1)
+
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_mRNA.png", width=578, height=500)
+heatmap.2(as.matrix(mRNA_scaled), trace="none", col=RdBu_pal2(9), Colv=as.dendrogram(clust$hclust), ColSideColors=clab)
+dev.off()
+```
+![mRNA hierarchical clustering](/home/BCRICWH.LAN/sschaffner/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_mRNA.png)
+
+### DNAhm
+```{r DNAhm PLS, eval=F}
+DNAhm <- t(DNAhm)
+Greys <- brewer.pal("Greys", n=9)
+
+#clustering and significance testing
+clust <- pvclust(DNAhm)
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/pvclust_DNAhm.png", width=578, height=500)
+plot(clust)
+dev.off
+
+#colour by group
+colnames(DNAhm)
+clab=c(rep("black",4),rep("grey60",3),rep("plum3",3),rep("palegreen3",3))
+names(clab) <- c(rep("WTSE",4),rep("WTEE",3),rep("TGSE",3),rep("TGEE",3))
+
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_DNAhm.png", width=578, height=500)
+heatmap.2(DNAhm, trace="none", col=Greys, Colv=as.dendrogram(clust$hclust), ColSideColors=clab)
+dev.off()
+```
+![DNAhm hierarchical clustering](/home/BCRICWH.LAN/sschaffner/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_DNAhm.png)
+
+### DNAm
+```{r DNAm PLS, eval=F}
+DNAm <- t(DNAm)
+
+#clustering and significance testing
+clust <- pvclust(DNAm)
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/pvclust_DNAm.png", width=578, height=500)
+plot(clust)
+dev.off
+
+#colour by group
+colnames(DNAm)
+clab=c(rep("black",4),rep("plum3",3),rep("grey60",3),rep("palegreen3",3))
+names(clab) <- c(rep("WTSE",4),rep("TGSE",3),rep("WTEE",3),rep("TGEE",3))
+
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_DNAm.png", width=578, height=500)
+heatmap.2(DNAm, trace="none", col=Greys, Colv=as.dendrogram(clust$hclust), ColSideColors=clab)
+dev.off()
+```
+![DNAm hierarchical clustering: random 20K CpGs](/home/BCRICWH.LAN/sschaffner/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_DNAm.png)
+
+### DNAm with 20k most variable CpGs
+
+Start with the non-filtered object to get the variability reference range calculated based on all CpGs.
+```{r}
+#DNAm/DNAhm
+load("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpG/auto/10X_filter/hippEE_oxBS_BSraw_CpG_10X_noout.RData")
+dim(oxBS_BSraw_CpG_noout) #914215     13
+unique(seqnames(oxBS_BSraw_CpG_noout)) #some chrY are there, measuring small amount of noise
+# [1] chr1  chr10 chr11 chr12 chr13 chr14 chr15 chr16 chr17 chr18 chr19 chr2  chr3  chr4  chr5  chr6  chr7 
+#[18] chr8  chr9  chrX  chrY 
+dim(oxBS_BSraw_auto <- oxBS_BSraw_CpG_noout[-which(seqnames(oxBS_BSraw_CpG_noout) %in% c("chrX","chrY")),])
+#882506     13
+
+#variability filter
+betas <- methLevel(rawToRel(oxBS_BSraw_auto))
+Variation<-function(x) {quantile(x, c(0.9), na.rm=T)[[1]]-quantile(x, c(0.1), na.rm=T)[[1]]}
+ref_range<-sapply(1:nrow(betas), function(x) Variation(betas[x,]))
+summary(ref_range)
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#0.000000 0.009639 0.061881 0.092125 0.146235 0.960000
+names(ref_range) <- paste(seqnames(oxBS_BSraw_auto), ranges(oxBS_BSraw_auto), sep=":")
+rownames(betas) <- names(ref_range)
+ref_range <- sort(ref_range, decreasing=TRUE)
+summary(ref_range[1:20000])
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.3412  0.3580  0.3803  0.3958  0.4166  0.9600 
+
+dim(betas_variable <- betas[rownames(betas) %in% names(ref_range[1:20000]),]) #20000    13
+colnames(betas_variable)
+#order: WTSE, TGSE, WTEE, TGEE
+betas_variable <- betas_variable[,c(1:4,8:10,5:7,11:13)]
+colnames(betas_variable)
+
+#clustering and significance testing
+clust <- pvclust(betas_variable)
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/pvclust_DNAm_top_20k_var.png", width=578, height=500)
+plot(clust)
+dev.off()
+#there is still no clear geno/E pattern of clustering
+
+#colour by group
+clab=c(rep("black",4),rep("plum3",3),rep("grey60",3),rep("palegreen3",3))
+names(clab) <- c(rep("WTSE",4),rep("TGSE",3),rep("WTEE",3),rep("TGEE",3))
+
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_DNAm_top_20k_var.png", width=578, height=500)
+heatmap.2(betas_variable, trace="none", col=Greys, Colv=as.dendrogram(clust$hclust), ColSideColors=clab)
+dev.off()
+```
+![DNAm hierarchical clustering: Top 20k most variable CpGs](/home/BCRICWH.LAN/sschaffner/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_DNAm_top_20k_var.png)
+
+### DNAm (CpH) with 20k most variable CpGs
+
+Start with the non-filtered object to get the variability reference range calculated based on all CpGs.
+```{r}
+#DNAm/DNAhm
+load("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/3-methdiff_DNAm_DNAhm/preprocessing/oxbisulfite/CpH/auto/10X_filter/hippEE_oxBS_BSraw_CpH_10X_noout.RData")
+dim(oxBS_BSraw_CpH_noout) #3938054      13
+unique(seqnames(oxBS_BSraw_CpH_noout)) #some chrY are there, measuring small amount of noise
+# [1] chr1  chr10 chr11 chr12 chr13 chr14 chr15 chr16 chr17 chr18 chr19 chr2  chr3  chr4  chr5  chr6  chr7 
+#[18] chr8  chr9  chrX  chrY 
+dim(oxBS_BSraw_auto <- oxBS_BSraw_CpH_noout[-which(seqnames(oxBS_BSraw_CpH_noout) %in% c("chrX","chrY")),])
+#3755512      13
+
+#variability filter
+betas <- methLevel(rawToRel(oxBS_BSraw_auto))
+Variation<-function(x) {quantile(x, c(0.9), na.rm=T)[[1]]-quantile(x, c(0.1), na.rm=T)[[1]]}
+ref_range<-sapply(1:nrow(betas), function(x) Variation(betas[x,]))
+summary(ref_range)
+#    Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#0.000000 0.009639 0.061881 0.092125 0.146235 0.960000
+names(ref_range) <- paste(seqnames(oxBS_BSraw_auto), ranges(oxBS_BSraw_auto), sep=":")
+rownames(betas) <- names(ref_range)
+ref_range <- sort(ref_range, decreasing=TRUE)
+summary(ref_range[1:20000])
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.1683  0.1848  0.2082  0.2252  0.2480  0.9922 
+
+dim(betas_variable <- betas[rownames(betas) %in% names(ref_range[1:20000]),]) #20000    13
+colnames(betas_variable)
+#order: WTSE, TGSE, WTEE, TGEE
+betas_variable <- betas_variable[,c(1:4,8:10,5:7,11:13)]
+colnames(betas_variable)
+
+#clustering and significance testing
+clust <- pvclust(betas_variable)
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/pvclust_mCpH_top_20k_var.png", width=578, height=500)
+plot(clust)
+dev.off()
+#there is still no clear geno/E pattern of clustering
+
+#colour by group
+colnames(betas_variable)
+clab=c(rep("black",4),rep("plum3",3),rep("grey60",3),rep("palegreen3",3))
+names(clab) <- c(rep("WTSE",4),rep("TGSE",3),rep("WTEE",3),rep("TGEE",3))
+
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_DNAm_top_20k_var.png", width=578, height=500)
+heatmap.2(betas_variable, trace="none", col=Greys, Colv=as.dendrogram(clust$hclust), ColSideColors=clab)
+dev.off()
+```
+![DNAm hierarchical clustering: Top 20k most variable CpGs](/home/BCRICWH.LAN/sschaffner/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_DNAm_top_20k_var.png)
+
+### H3K4me1
+```{r H3K4me1 PLS, eval=F}
+H3K4me1 <- t(H3K4me1.mat)
+
+#clustering and significance testing
+clust <- pvclust(H3K4me1)
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/pvclust_H3K4me1_check.png", width=578, height=500)
+plot(clust)
+dev.off()
+
+#colour by group
+colnames(H3K4me1)
+clab=c(rep("black",4),rep("plum3",4),rep("grey60",4),rep("palegreen3",4))
+names(clab) <- c(rep("WTSE",4),rep("TGSE",4),rep("WTEE",4),rep("TGEE",4))
+
+#transform counts to Z-scores
+H3K4me1_scaled <- as.data.frame(t(apply(H3K4me1, 1, function(x) scale(x))))
+colnames(H3K4me1_scaled) <- colnames(H3K4me1)
+limit <- max(abs(H3K4me1_scaled))*c(-1,1)
+RdBu_pal2 <- brewer_pal(palette=5, type="div", direction=-1)
+
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_H3K4me1.png", width=578, height=500)
+heatmap.2(as.matrix(H3K4me1_scaled), trace="none", col=RdBu_pal2(9), Colv=as.dendrogram(clust$hclust), ColSideColors=clab)
+dev.off()
+```
+![H3K4me1 hierarchical clustering](/home/BCRICWH.LAN/sschaffner/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_H3K4me1.png)
+
+### H3K4me1: top most variable peaks
+```{r H3K4me1 PLS, eval=F}
+#variability filter
+ref_range<-sapply(1:nrow(H3K4me1), function(x) Variation(H3K4me1[x,]))
+summary(ref_range)
+#  Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#  4.725  15.685  20.825  26.306  29.765 888.345 
+names(ref_range) <- rownames(H3K4me1)
+ref_range <- sort(ref_range, decreasing=TRUE)
+summary(ref_range[1:20000])
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#  35.60   40.10   47.14   58.08   61.56  888.35 
+
+dim(K4me1_variable <- H3K4me1[rownames(H3K4me1) %in% names(ref_range[1:20000]),]) #20000    16
+colnames(K4me1_variable)
+#order: WTSE, TGSE, WTEE, TGEE
+
+#clustering and significance testing
+clust <- pvclust(K4me1_variable)
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/pvclust_H3K4me1_top_20k_var.png", width=578, height=500)
+plot(clust)
+dev.off()
+
+#colour by group
+colnames(K4me1_variable)
+clab=c(rep("black",4),rep("plum3",4),rep("grey60",4),rep("palegreen3",4))
+names(clab) <- c(rep("WTSE",4),rep("TGSE",4),rep("WTEE",4),rep("TGEE",4))
+
+#transform counts to Z-scores
+H3K4me1_scaled <- as.data.frame(t(apply(K4me1_variable, 1, function(x) scale(x))))
+colnames(H3K4me1_scaled) <- colnames(K4me1_variable)
+limit <- max(abs(H3K4me1_scaled))*c(-1,1)
+RdBu_pal2 <- brewer_pal(palette=5, type="div", direction=-1)
+
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_H3K4me1_top_20k_var.png", width=578, height=500)
+heatmap.2(as.matrix(H3K4me1_scaled), trace="none", col=RdBu_pal2(9), Colv=as.dendrogram(clust$hclust), ColSideColors=clab)
+dev.off()
+```
+![H3K4me1 hierarchical clustering: top 20k most variable peaks](/home/BCRICWH.LAN/sschaffner/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_H3K4me1_top_20k_var.png)
+
+### H3K4me3
+```{r H3K4me3 PLS, eval=F}
+H3K4me3 <- t(H3K4me3)
+
+#clustering and significance testing
+clust <- pvclust(H3K4me3)
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/pvclust_H3K4me3.png", width=578, height=500)
+plot(clust)
+dev.off()
+
+#colour by group
+colnames(H3K4me3)
+clab=c(rep("black",4),rep("plum3",4),rep("grey60",4),rep("palegreen3",4))
+names(clab) <- c(rep("WTSE",4),rep("TGSE",4),rep("WTEE",4),rep("TGEE",4))
+
+#transform counts to Z-scores
+H3K4me3_scaled <- as.data.frame(t(apply(H3K4me3, 1, function(x) scale(x))))
+colnames(H3K4me3_scaled) <- colnames(H3K4me3)
+limit <- max(abs(H3K4me3_scaled))*c(-1,1)
+RdBu_pal2 <- brewer_pal(palette=5, type="div", direction=-1)
+
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_H3K4me3.png", width=578, height=500)
+heatmap.2(as.matrix(H3K4me3_scaled), trace="none", col=RdBu_pal2(9), Colv=as.dendrogram(clust$hclust), ColSideColors=clab)
+dev.off()
+```
+![H3K4me3 hierarchical clustering](/home/BCRICWH.LAN/sschaffner/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_H3K4me3.png)
+
+### H3K27ac
+```{r H3K27ac PLS, eval=F}
+H3K27ac <- t(H3K27ac)
+
+#clustering and significance testing
+clust <- pvclust(H3K27ac)
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/pvclust_H3K27ac.png", width=578, height=500)
+plot(clust)
+dev.off()
+
+#colour by group
+colnames(H3K27ac)
+clab=c(rep("black",4),rep("plum3",4),rep("grey60",4),rep("palegreen3",4))
+names(clab) <- c(rep("WTSE",4),rep("TGSE",4),rep("WTEE",4),rep("TGEE",4))
+
+#transform counts to Z-scores
+H3K27ac_scaled <- as.data.frame(t(apply(H3K27ac, 1, function(x) scale(x))))
+colnames(H3K27ac_scaled) <- colnames(H3K27ac)
+limit <- max(abs(H3K27ac_scaled))*c(-1,1)
+RdBu_pal2 <- brewer_pal(palette=5, type="div", direction=-1)
+
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_H3K27ac.png", width=578, height=500)
+heatmap.2(as.matrix(H3K27ac_scaled), trace="none", col=RdBu_pal2(9), Colv=as.dendrogram(clust$hclust), ColSideColors=clab)
+dev.off()
+```
+![H3K27ac hierarchical clustering](/home/BCRICWH.LAN/sschaffner/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_H3K27ac.png)
+
+
+### H3K27ac: top most variable peaks
+```{r H3K27ac PLS, eval=F}
+H3K27ac <- t(H3K27ac.mat)
+#variability filter
+ref_range<-sapply(1:nrow(H3K27ac), function(x) Variation(H3K27ac[x,]))
+summary(ref_range)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#  3.795  12.115  16.150  20.126  23.410 360.090 
+names(ref_range) <- rownames(H3K27ac)
+ref_range <- sort(ref_range, decreasing=TRUE)
+summary(ref_range[1:20000])
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#  25.66   28.99   34.09   39.95   43.45  360.09 
+
+dim(K27ac_variable <- H3K27ac[rownames(H3K27ac) %in% names(ref_range[1:20000]),]) #20000    16
+colnames(K27ac_variable)
+#order: WTSE, TGSE, WTEE, TGEE
+
+#clustering and significance testing
+clust <- pvclust(K27ac_variable)
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/pvclust_H3K27ac_top_20k_var.png", width=578, height=500)
+plot(clust)
+dev.off()
+
+#colour by group
+colnames(K27ac_variable)
+clab=c(rep("black",4),rep("plum3",4),rep("grey60",4),rep("palegreen3",4))
+names(clab) <- c(rep("WTSE",4),rep("TGSE",4),rep("WTEE",4),rep("TGEE",4))
+
+#transform counts to Z-scores
+H3K27ac_scaled <- as.data.frame(t(apply(K27ac_variable, 1, function(x) scale(x))))
+colnames(H3K27ac_scaled) <- colnames(K27ac_variable)
+limit <- max(abs(H3K27ac_scaled))*c(-1,1)
+RdBu_pal2 <- brewer_pal(palette=5, type="div", direction=-1)
+
+png("~/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_H3K27ac_top_20k_var.png", width=578, height=500)
+heatmap.2(as.matrix(H3K27ac_scaled), trace="none", col=RdBu_pal2(9), Colv=as.dendrogram(clust$hclust), ColSideColors=clab)
+dev.off()
+```
+![H3K27ac hierarchical clustering: top 20k most variable peaks](/home/BCRICWH.LAN/sschaffner/KoborLab/Projects/DecipherPD_mouse/EE_asyn/sschaffner/6-multi_omic_integration/hierarchical_clustering/hclust_H3K27ac_top_20k_var.png)
